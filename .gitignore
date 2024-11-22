@@ -1,0 +1,11 @@
+cache
+/dist
+/dev
+.idea
+/.venv
+/.vscode
+/poetry.lock
+__pycache__
+/.ipynb_checkpoints
+idea
+target
