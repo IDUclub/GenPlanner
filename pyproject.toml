@@ -1,12 +1,12 @@
 [tool.poetry]
-name = "BlockGenerator"
+name = "GenPlanner"
 version = "0.1.0"
 license = "BSD-3-Clause"
 description = "kek"
 authors = ["DDonnyy <63115678+DDonnyy@users.noreply.github.com>"]
 readme = "README.md"
 
-packages = [{ include = "block_generator", from = "src" }]
+packages = [{ include = "src", from = "gen_planner/python" }]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
@@ -14,7 +14,6 @@ tqdm = "^4.66.2"
 numpy = "^2.1.3"
 pandas = "^2.2.0"
 geopandas = "^1.0.0"
-networkx = "^3.3"
 loguru = "^0.7.2"
 scipy = "^1.13.1"
 
