@@ -23,7 +23,7 @@ class GenPlanner:
     pivot_point: Point
 
     def __init__(self, territory: gpd.GeoDataFrame, rotation: bool | float = True):
-        print('start init')
+
         self.original_territory = self._gdf_to_poly(territory.copy())
 
         if rotation:
@@ -46,12 +46,15 @@ class GenPlanner:
             raise RuntimeError
 
     def zone2block(self, polygon: Polygon, func_zone: FuncZone) -> gpd.GeoDataFrame:
-        print('inside zone2block')
+
         polygon = self.original_territory
         target_area = polygon.area
+        print(f'target_area {target_area}')
         min_area = func_zone.min_block_area
+        print(f'min_area {min_area}')
         max_delimeter = 6
         n_blocks = target_area // min_area
+        print(f'n_blocks{n_blocks}')
         temp_area = min_area
         delimeters = []
         while temp_area < target_area:
@@ -86,8 +89,11 @@ class GenPlanner:
             for n_areas,poly in zip(to_split,polygons):
                 areas_dict = {x:1/n_areas for x in range(n_areas)}
                 print(areas_dict)
-                res = _split_polygon(poly,self.local_crs,areas_dict)
-                temp_polygons+= res['geometry'].tolist()
+                try:
+                    res = _split_polygon(poly,self.local_crs,areas_dict)
+                    temp_polygons += res['geometry'].tolist()
+                except RuntimeError as e:
+                    print(e)
 
             polygons = temp_polygons
             result.append(polygons)
@@ -114,7 +120,7 @@ def _split_polygon(
     if zone_connections is None:
         zone_connections = []
     bounds = polygon.bounds
-    normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds)).buffer(0.03) #TODO fix shit
+    normalized_polygon = Polygon(normalize_coords(polygon.buffer(10).exterior.coords, bounds)) #TODO fix shit
     poisson_points = generate_points(normalized_polygon, point_radius)
     full_area = normalized_polygon.area
     areas = pd.DataFrame(list(areas_dict.items()), columns=["zone_name", "ratio"])
