@@ -1,29 +1,16 @@
-class FuncZone:
-    min_block_area: float  # m^2
-    name: str
+from .models import FuncZone, Scenario, GenPlan
 
-    def __init__(self, min_block_area: float = 160000, name="test"):
-        self.min_block_area = min_block_area
-        self.name = name
+minimum_block_area = 160000
 
+residential = FuncZone(minimum_block_area, "residential")
+industrial = FuncZone(minimum_block_area * 4, "industrial")
+business = FuncZone(minimum_block_area, "business")
+recreation = FuncZone(minimum_block_area * 2, "recreation")
+transport = FuncZone(minimum_block_area, "transport")
+agricalture = FuncZone(minimum_block_area * 4, "agriculture")
+special = FuncZone(minimum_block_area, "special")
 
-residential = FuncZone(0.1, "residential")
-industrial = FuncZone(0.1, "industrial")
-business = FuncZone(0.1, "business")
-recreation = FuncZone(0.1, "recreation")
-transport = FuncZone(0.1, "transport")
-agricalture = FuncZone(0.1, "agriculture")
-special = FuncZone(0.1, "special")
-
-
-class Scenario:
-    zones_ratio = dict[FuncZone, float]
-
-    def __init__(self, zones_ratio):
-        self.zones_ratio = zones_ratio
-
-
-basic_gen_plan = Scenario(
+basic_scenario = Scenario(
     {
         residential: 0.25,
         industrial: 0.12,
@@ -32,7 +19,8 @@ basic_gen_plan = Scenario(
         transport: 0.1,
         agricalture: 0.03,
         special: 0.02,
-    }
+    },
+    'basic'
 )
 
 residential_territory = Scenario(
@@ -44,6 +32,8 @@ residential_territory = Scenario(
         agricalture: 0.05,
         special: 0.05,
     }
+    ,
+    'residential territory'
 )
 
 industrial_territory = Scenario(
@@ -54,7 +44,8 @@ industrial_territory = Scenario(
         transport: 0.1,
         agricalture: 0.05,
         special: 0.05,
-    }
+    },
+    'industrial territory'
 )
 business_territory = Scenario(
     {
@@ -64,7 +55,8 @@ business_territory = Scenario(
         transport: 0.1,
         agricalture: 0.05,
         special: 0.05,
-    }
+    },
+    'business territory'
 )
 recreation_territory = Scenario(
     {
@@ -73,7 +65,8 @@ recreation_territory = Scenario(
         recreation: 0.5,
         transport: 0.05,
         agricalture: 0.1,
-    }
+    },
+    'recreation territory'
 )
 transport_territory = Scenario(
     {
@@ -83,7 +76,8 @@ transport_territory = Scenario(
         transport: 0.5,
         agricalture: 0.05,
         special: 0.05,
-    }
+    },
+    'transport territory'
 )
 agricalture_territory = Scenario(
     {
@@ -94,7 +88,8 @@ agricalture_territory = Scenario(
         transport: 0.05,
         agricalture: 0.5,
         special: 0.05,
-    }
+    },
+    'agriculture territory'
 )
 special_territory = Scenario(
     {
@@ -105,5 +100,15 @@ special_territory = Scenario(
         transport: 0.05,
         agricalture: 0.03,
         special: 0.02,
-    }
+    },
+    'special territory'
 )
+
+gen_plan = GenPlan({residential_territory: 0.196,
+                    industrial_territory: 0.08,
+                    business_territory: 0.1195,
+                    recreation_territory: 0.203,
+                    transport_territory: 0.1225,
+                    agricalture_territory: 0.081,
+                    special_territory: 0.049,
+                    })
