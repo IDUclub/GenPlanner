@@ -3,6 +3,9 @@ mod loss_topo;
 use del_candle::voronoi2::VoronoiInfo;
 use del_canvas_core::canvas_gif::Canvas;
 use pyo3::prelude::*;
+use pyo3::exceptions;
+use std::panic;
+use std::backtrace::Backtrace;
 
 #[pyfunction]
 fn optimize_space(
@@ -14,22 +17,31 @@ fn optimize_space(
     room_connections: Vec<(usize, usize)>,
     create_gif: bool,
 ) -> PyResult<(Vec<usize>, Vec<f32>, Vec<f32>)> {
-    dbg!(&vtxl2xy.len());
-    dbg!(&site2xy.len());
-    dbg!(&site2room.len());
-    dbg!(&site2xy2flag.len());
-    dbg!(&room2area_trg.len());
-    dbg!(&room_connections.len());
-    let result = optimize(
-        vtxl2xy,
-        site2xy,
-        site2room,
-        site2xy2flag,
-        room2area_trg,
-        room_connections,
-        create_gif,
-    ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-    Ok(result)
+
+    let result = panic::catch_unwind(|| {
+        optimize(
+            vtxl2xy,
+            site2xy,
+            site2room,
+            site2xy2flag,
+            room2area_trg,
+            room_connections,
+            create_gif,
+        )
+    });
+    match result {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())),
+        Err(_) => {
+            // Ловим панику и получаем стектрейс
+            let backtrace = Backtrace::force_capture();
+            let panic_message = format!(
+                "A panic occurred in the Rust code.\n\nBacktrace:\n{:?}",
+                backtrace
+            );
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(panic_message))
+        }
+    }
 }
 
 
