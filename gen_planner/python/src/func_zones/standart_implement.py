@@ -98,8 +98,8 @@ special_territory = Scenario(
         business: 0.05,
         recreation: 0.05,
         transport: 0.05,
-        agricalture: 0.03,
-        special: 0.02,
+        agricalture: 0.05,
+        special: 0.5,
     },
     'special territory'
 )

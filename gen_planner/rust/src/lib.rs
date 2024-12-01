@@ -3,7 +3,7 @@ mod loss_topo;
 use del_candle::voronoi2::VoronoiInfo;
 use del_canvas_core::canvas_gif::Canvas;
 use pyo3::prelude::*;
-use pyo3::exceptions;
+
 use std::panic;
 use std::backtrace::Backtrace;
 
@@ -16,8 +16,7 @@ fn optimize_space(
     room2area_trg: Vec<f32>,
     room_connections: Vec<(usize, usize)>,
     create_gif: bool,
-) -> PyResult<(Vec<usize>, Vec<f32>, Vec<f32>)> {
-
+) -> PyResult<(Vec<usize>, Vec<usize>, Vec<f32>, Vec<usize>)> {
     let result = panic::catch_unwind(|| {
         optimize(
             vtxl2xy,
@@ -225,11 +224,12 @@ pub fn optimize(
     room2area_trg: Vec<f32>,
     room_connections: Vec<(usize, usize)>,
     create_gif: bool)
-    -> anyhow::Result<(Vec<usize>, Vec<f32>, Vec<f32>)>
+    -> anyhow::Result<(Vec<usize>, Vec<usize>, Vec<f32>, Vec<usize>)>
 {
-    let mut final_edge2vtxv_wall = Vec::new();
     let mut final_vtxv2xy = Vec::new();
-    let mut final_site2xy = Vec::new();
+    let mut final_site2idx = Vec::new();
+    let mut final_idx2vtxv = Vec::new();
+    let mut final_edge2vtxv_wall = Vec::new();
 
 
     let room2color = vec![15390321, 16185205, 15171426, 6527726];
@@ -290,8 +290,7 @@ pub fn optimize(
     };
     use candle_nn::Optimizer;
     use std::time::Instant;
-    dbg!(site2room.len());
-    let now = Instant::now();
+
     let mut optimizer = candle_nn::AdamW::new(vec![site2xy.clone()], adamw_params)?;
     let n_iter = 250;
     for _iter in 0..n_iter {
@@ -417,12 +416,11 @@ pub fn optimize(
             canvas_gif.write();
         }
         if _iter == n_iter - 1 {
-            final_edge2vtxv_wall = edge2vtxv_wall.clone();
+            final_site2idx = voronoi_info.site2idx;
+            final_idx2vtxv = voronoi_info.idx2vtxv;
             final_vtxv2xy = vtxv2xy.flatten_all()?.to_vec1::<f32>()?;
-            final_site2xy = site2xy.flatten_all()?.to_vec1::<f32>()?;
+            final_edge2vtxv_wall = edge2vtxv_wall.clone();
         }
     }
-    let elapsed = now.elapsed();
-    println!("Elapsed: {:.2?}", elapsed);
-    Ok((final_edge2vtxv_wall, final_vtxv2xy, final_site2xy))
+    Ok((final_site2idx, final_idx2vtxv, final_vtxv2xy, final_edge2vtxv_wall))
 }
