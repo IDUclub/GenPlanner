@@ -1,1 +1,1 @@
-from .standart_implement import residential, industrial, business, recreation, transport, agricalture, special
+from .standart_implement import residential, industrial, business, recreation, transport, agriculture, special

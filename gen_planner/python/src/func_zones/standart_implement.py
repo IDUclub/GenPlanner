@@ -1,114 +1,138 @@
-from .models import FuncZone, Scenario, GenPlan
+from .models import TerritoryZone, FuncZone, GenPlan
 
 minimum_block_area = 160000
 
-residential = FuncZone(minimum_block_area, "residential")
-industrial = FuncZone(minimum_block_area * 4, "industrial")
-business = FuncZone(minimum_block_area, "business")
-recreation = FuncZone(minimum_block_area * 2, "recreation")
-transport = FuncZone(minimum_block_area, "transport")
-agricalture = FuncZone(minimum_block_area * 4, "agriculture")
-special = FuncZone(minimum_block_area, "special")
+residential = TerritoryZone(
+    "residential",
+    minimum_block_area,
+)
+industrial = TerritoryZone(
+    "industrial",
+    minimum_block_area * 4,
+)
+business = TerritoryZone(
+    "business",
+    minimum_block_area,
+)
+recreation = TerritoryZone(
+    "recreation",
+    minimum_block_area * 2,
+)
+transport = TerritoryZone(
+    "transport",
+    minimum_block_area,
+)
+agriculture = TerritoryZone(
+    "agriculture",
+    minimum_block_area * 4,
+)
+special = TerritoryZone(
+    "special",
+    minimum_block_area,
+)
 
-basic_scenario = Scenario(
+basic_scenario = FuncZone(
     {
         residential: 0.25,
         industrial: 0.12,
         business: 0.08,
         recreation: 0.3,
         transport: 0.1,
-        agricalture: 0.03,
+        agriculture: 0.03,
         special: 0.02,
     },
-    'basic'
+    "basic",
 )
 
-residential_territory = Scenario(
+residential_territory = FuncZone(
     {
         residential: 0.5,
         business: 0.1,
         recreation: 0.1,
         transport: 0.1,
-        agricalture: 0.05,
+        agriculture: 0.05,
         special: 0.05,
-    }
-    ,
-    'residential territory'
+    },
+    "residential territory",
 )
 
-industrial_territory = Scenario(
+industrial_territory = FuncZone(
     {
         industrial: 0.5,
         business: 0.1,
         recreation: 0.05,
         transport: 0.1,
-        agricalture: 0.05,
+        agriculture: 0.05,
         special: 0.05,
     },
-    'industrial territory'
+    "industrial territory",
 )
-business_territory = Scenario(
+business_territory = FuncZone(
     {
         residential: 0.1,
         business: 0.5,
         recreation: 0.1,
         transport: 0.1,
-        agricalture: 0.05,
+        agriculture: 0.05,
         special: 0.05,
     },
-    'business territory'
+    "business territory",
 )
-recreation_territory = Scenario(
+recreation_territory = FuncZone(
     {
         residential: 0.2,
         business: 0.1,
         recreation: 0.5,
         transport: 0.05,
-        agricalture: 0.1,
+        agriculture: 0.1,
     },
-    'recreation territory'
+    "recreation territory",
 )
-transport_territory = Scenario(
+transport_territory = FuncZone(
     {
         industrial: 0.1,
         business: 0.05,
         recreation: 0.05,
         transport: 0.5,
-        agricalture: 0.05,
+        agriculture: 0.05,
         special: 0.05,
     },
-    'transport territory'
+    "transport territory",
 )
-agricalture_territory = Scenario(
+agricalture_territory = FuncZone(
     {
         residential: 0.1,
         industrial: 0.1,
         business: 0.05,
         recreation: 0.1,
         transport: 0.05,
-        agricalture: 0.5,
+        agriculture: 0.5,
         special: 0.05,
     },
-    'agriculture territory'
+    "agriculture territory",
 )
-special_territory = Scenario(
+special_territory = FuncZone(
     {
         residential: 0.01,
         industrial: 0.1,
         business: 0.05,
         recreation: 0.05,
         transport: 0.05,
-        agricalture: 0.05,
+        agriculture: 0.05,
         special: 0.5,
     },
-    'special territory'
+    "special territory",
 )
 
-gen_plan = GenPlan({residential_territory: 0.196,
-                    industrial_territory: 0.08,
-                    business_territory: 0.1195,
-                    recreation_territory: 0.203,
-                    transport_territory: 0.1225,
-                    agricalture_territory: 0.081,
-                    special_territory: 0.049,
-                    })
+gen_plan = GenPlan(
+    name="General Plan",
+    scenarios_ratio={
+        residential_territory: 0.277,
+        industrial_territory: 0.133,
+        business_territory: 0.088,
+        recreation_territory: 0.333,
+        transport_territory: 0.111,
+        agricalture_territory: 0.033,
+        special_territory: 0.022,
+    }
+)

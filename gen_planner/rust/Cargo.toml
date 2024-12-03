@@ -9,7 +9,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib","rlib"]
 
 [dependencies]
-pyo3 = { version = "0.23.1", features = ["extension-module"] }
+pyo3 = { version = "=0.23.1", features = ["extension-module"] }
 rand = "=0.8.5"
 nalgebra = "=0.33.0"
 anyhow = "=1.0.86"
