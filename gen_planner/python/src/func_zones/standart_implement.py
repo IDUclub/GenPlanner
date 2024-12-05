@@ -127,11 +127,11 @@ special_territory = FuncZone(
 gen_plan = GenPlan(
     name="General Plan",
     scenarios_ratio={
+        recreation_territory: 0.333,
         residential_territory: 0.277,
         industrial_territory: 0.133,
-        business_territory: 0.088,
-        recreation_territory: 0.333,
         transport_territory: 0.111,
+        business_territory: 0.088,
         agricalture_territory: 0.033,
         special_territory: 0.022,
     }

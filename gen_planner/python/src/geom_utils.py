@@ -85,6 +85,6 @@ def generate_points(area_to_fill: Polygon, radius, seed=None):
     points[:, 0] = points[:, 0] * width + min_x
     points[:, 1] = points[:, 1] * height + min_y
 
-    points_in_polygon = np.array([point for point in points if area_to_fill.contains(Point(point))])
+    points_in_polygon = np.array([point for point in points])
 
     return points_in_polygon

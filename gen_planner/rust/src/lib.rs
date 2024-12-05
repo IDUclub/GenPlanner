@@ -368,7 +368,7 @@ pub fn optimize(
         else {
         };
          */
-        let loss_each_area = loss_each_area.affine(5.0, 0.0)?.clone();
+        let loss_each_area = loss_each_area.affine(15.0, 0.0)?.clone();
         let loss_total_area = loss_total_area.affine(10.0, 0.0)?.clone();
         let loss_walllen = loss_walllen.affine(0.02, 0.0)?;
         let loss_topo = loss_topo.affine(1., 0.0)?;

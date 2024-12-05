@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from pyproj import CRS
 from rust_optimizer import optimize_space
+from scipy.stats import false_discovery_control
 from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 
 from gen_planner.python.src.func_zones import TerritoryZone, FuncZone, basic_scenario, gen_plan, GenPlan
@@ -19,12 +20,12 @@ from gen_planner.python.src.geom_utils import (
 
 poisson_n_radius = {
     2: 0.25,
-    3: 0.22,
-    4: 0.2,
-    5: 0.17,
-    6: 0.15,
-    7: 0.1,
-    8: 0.08,
+    3: 0.23,
+    4: 0.22,
+    5: 0.2,
+    6: 0.17,
+    7: 0.15,
+    8: 0.1,
 }
 
 
@@ -137,6 +138,12 @@ def district2zone2block_initial(task, **kwargs):
     )
     tasks = []
     kwargs.update({"func_zone": func_zone.name})
+
+    data = {key: [value] * len(zones) for key, value in kwargs.items() if key != "local_crs"}
+    zones = gpd.GeoDataFrame(data=data, geometry=zones.geometry,crs=kwargs.get("local_crs"))
+    return zones,False
+
+
     for _, zone in zones.iterrows():
         tasks.append((zone2block_initial, (zone.geometry, zone.zone_name), kwargs))
     return tasks, True
@@ -178,7 +185,7 @@ def zone2block_splitter(task, **kwargs):
         n_areas = min(8, int(polygon.area // min_area))
         if n_areas in [0, 1]:
             data = {key: [value] for key, value in kwargs.items() if key != "local_crs"}
-            res = gpd.GeoDataFrame(data=data, geometry=[polygon], crs=kwargs.get("local_crs", None))
+            res = gpd.GeoDataFrame(data=data, geometry=[polygon], crs=kwargs.get("local_crs"))
             return res, False
     else:
         n_areas = delimeters[deep - 1]
@@ -191,7 +198,7 @@ def zone2block_splitter(task, **kwargs):
     )
     if deep == len(delimeters):
         data = {key: [value] * len(res) for key, value in kwargs.items() if key != "local_crs"}
-        res = gpd.GeoDataFrame(data=data, geometry=res.geometry, crs=kwargs.get("local_crs", None))
+        res = gpd.GeoDataFrame(data=data, geometry=res.geometry, crs=kwargs.get("local_crs"))
         return res, False
     else:
         deep = deep + 1
@@ -235,57 +242,14 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> gpd.Ge
 
 
 def _split_polygon(
-    polygon: Polygon,
-    areas_dict: dict,
-    local_crs: CRS,
-    point_radius: float = 0.1,
-    zone_connections: list = None,
+        polygon: Polygon,
+        areas_dict: dict,
+        local_crs: CRS,
+        point_radius: float = 0.1,
+        zone_connections: list = None,
 ) -> gpd.GeoDataFrame:
     if zone_connections is None:
         zone_connections = []
-
-    bounds = polygon.bounds
-    normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds))
-    for i in range(10):  # 10 attempts
-        try:
-            poisson_points = generate_points(normalized_polygon, point_radius)
-            full_area = normalized_polygon.area
-            areas = pd.DataFrame(list(areas_dict.items()), columns=["zone_name", "ratio"])
-            areas["ratio"] = areas["ratio"] / areas["ratio"].sum()
-            areas["area"] = areas["ratio"] * full_area
-            areas.sort_values(by="ratio", ascending=True, inplace=True)
-            area_per_site = full_area / (len(poisson_points))
-            areas["site_indeed"] = round(areas["area"] / area_per_site).astype(int)
-            site2room = np.random.permutation(np.repeat(areas.index, areas["site_indeed"]))
-            poisson_points = poisson_points[: len(site2room)]
-            site2room = site2room[: len(poisson_points)].astype(int)
-            normalized_border = [
-                round(item, 8)
-                for sublist in normalized_polygon.exterior.segmentize(0.1).normalize().coords[::-1]
-                for item in sublist
-            ]
-            res = optimize_space(
-                vtxl2xy=normalized_border,
-                site2xy=poisson_points.flatten().round(8).tolist(),
-                site2room=site2room.tolist(),
-                site2xy2flag=[0.0 for _ in range(len(site2room) * 2)],
-                room2area_trg=areas["area"].sort_index().round(8).tolist(),
-                room_connections=zone_connections,
-                create_gif=False,
-            )
-            break
-        except RuntimeError as e:
-            if i + 1 == 10:
-                raise ValueError(f'site2room : {site2room} \n areas:{areas} \n point_radius: {point_radius}')
-                return gpd.GeoDataFrame()
-
-    site2idx = res[0]  # number of points [0,5,10,15,20] means there are 4 polygons with indexes 0..5 etc
-    idx2vtxv = res[1]  # node indexes for each voronoi poly
-    vtxv2xy = res[2]  # all points from generation (+bounds)
-    site2room = site2room.tolist()
-    edge2vtxv_wall = res[3]  # complete walls/roads
-
-    vtxv2xy = denormalize_coords([coords for coords in np.array(vtxv2xy).reshape(int(len(vtxv2xy) / 2), 2)], bounds)
 
     def create_polygons(site2idx, site2room, idx2vtxv, vtxv2xy):
         poly_coords = []
@@ -307,22 +271,93 @@ def _split_polygon(
 
         return poly_coords, poly_sites
 
-    polygons, poly_sites = create_polygons(site2idx, site2room, idx2vtxv, np.array(vtxv2xy).flatten().tolist())
+    bounds = polygon.bounds
+    normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds))
+    attempts = 10
+    for i in range(attempts):  # 10 attempts
+        try:
+            poisson_points = generate_points(normalized_polygon, point_radius)
+            full_area = normalized_polygon.area
+            areas = pd.DataFrame(list(areas_dict.items()), columns=["zone_name", "ratio"])
 
-    devided_zones = (
-        gpd.GeoDataFrame(geometry=polygons, data=poly_sites, columns=["zone_id"], crs=local_crs)
-        .dissolve("zone_id")
-        .reset_index()
-    )
-    devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index").drop(
-        columns=["index", "area", "site_indeed", "zone_id"]
-    )
-    devided_zones.geometry = devided_zones.geometry.apply(
-        lambda geom: max(geom.geoms, key=lambda x: x.area) if isinstance(geom, MultiPolygon) else geom
-    )
-    new_roads = [
-        (vtxv2xy[x[0]], vtxv2xy[x[1]]) for x in np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)
-    ]
-    new_roads = [LineString(x) for x in new_roads]
+            areas["ratio"] = areas["ratio"] / areas["ratio"].sum()
+            areas["area"] = areas["ratio"] * full_area
 
-    return devided_zones
+            areas["ratio_sqrt"] = np.sqrt(areas["ratio"]) / np.sqrt(areas["ratio"]).sum()
+            areas['area_sqrt'] = areas["ratio_sqrt"] * full_area
+
+            areas.sort_values(by="ratio", ascending=True, inplace=True)
+            area_per_site = areas['area_sqrt'].sum() / (len(poisson_points))
+            areas["site_indeed"] = np.floor(areas["area_sqrt"] / area_per_site).astype(int)
+
+            total_points_assigned = areas["site_indeed"].sum()
+            points_difference = len(poisson_points) - total_points_assigned
+
+            if points_difference > 0:  #
+                for _ in range(points_difference):
+                    areas.loc[areas["site_indeed"].idxmin(), "site_indeed"] += 1
+            elif points_difference < 0:
+                for _ in range(abs(points_difference)):
+                    areas.loc[areas["site_indeed"].idxmax(), "site_indeed"] -= 1
+            site2room = np.random.permutation(np.repeat(areas.index, areas["site_indeed"]))
+
+            normalized_border = [
+                round(item, 8)
+                for sublist in normalized_polygon.exterior.segmentize(0.1).normalize().coords[::-1]
+                for item in sublist
+            ]
+
+            res = optimize_space(
+                vtxl2xy=normalized_border,
+                site2xy=poisson_points.flatten().round(8).tolist(),
+                site2room=site2room.tolist(),
+                site2xy2flag=[0.0 for _ in range(len(site2room) * 2)],
+                room2area_trg=areas["area"].sort_index().round(8).tolist(),
+                room_connections=zone_connections,
+                create_gif=False,
+            )
+            site2idx = res[0]  # number of points [0,5,10,15,20] means there are 4 polygons with indexes 0..5 etc
+            idx2vtxv = res[1]  # node indexes for each voronoi poly
+            vtxv2xy = res[2]  # all points from generation (+bounds)
+            site2room = site2room.tolist()
+            edge2vtxv_wall = res[3]  # complete walls/roads
+
+            vtxv2xy = denormalize_coords([coords for coords in np.array(vtxv2xy).reshape(int(len(vtxv2xy) / 2), 2)],
+                                         bounds)
+
+            polygons, poly_sites = create_polygons(site2idx, site2room, idx2vtxv, np.array(vtxv2xy).flatten().tolist())
+            devided_zones = (
+                gpd.GeoDataFrame(geometry=polygons, data=poly_sites, columns=["zone_id"], crs=local_crs)
+                .dissolve("zone_id")
+                .reset_index()
+            )
+            if len(devided_zones) != len(areas):
+                raise ValueError(f"Number of devided_zones does not match {len(areas)}: {len(devided_zones)}")
+
+            devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index").drop(
+                columns=["index", "area", "site_indeed", "zone_id"]
+            )
+
+            devided_zones.geometry = devided_zones.geometry.apply(
+                lambda geom: max(geom.geoms, key=lambda x: x.area) if isinstance(geom, MultiPolygon) else geom
+            )
+            new_roads = [
+                (vtxv2xy[x[0]], vtxv2xy[x[1]]) for x in
+                np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)
+            ]
+            new_roads = [LineString(x) for x in new_roads]
+
+            return devided_zones
+
+        except UnboundLocalError as e:
+            raise ValueError(areas)
+        except Exception as e:
+            if i + 1 == attempts:
+                raise ValueError(
+                    f'site2room : {site2room} \n'
+                    f' areas:{areas} \n'
+                    f' len_points: {len(poisson_points)} \n'
+                    f' poly: {normalized_polygon}, \n'
+                    f' radius: {point_radius}, \n'
+                    f' {e}')
+            # return gpd.GeoDataFrame()
