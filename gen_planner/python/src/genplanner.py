@@ -5,10 +5,12 @@ from doctest import UnexpectedException
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from dask.array.random import geometric
 from pyproj import CRS
 from rust_optimizer import optimize_space
 from scipy.stats import false_discovery_control
 from shapely.geometry import Point, Polygon, MultiPolygon, LineString
+from shapely.lib import unary_union, to_wkt
 
 from gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_scenario, gen_plan, GenPlan
 from gen_planner.python.src.geom_utils import (
@@ -27,6 +29,12 @@ poisson_n_radius = {
     6: 0.17,
     7: 0.15,
     8: 0.1,
+}
+
+roads_width = {
+    'high speed highway': 60,
+    'regulated highway': 30,
+    'local road': 10
 }
 
 
@@ -95,12 +103,15 @@ def terr2district2zone2block_initial(task, **kwargs):
         point_radius=poisson_n_radius.get(len(areas_dict), 0.1),
         local_crs=local_crs,
     )
-    roads['road_lvl'] = 'high speed highway'
+    road_lvl = 'high speed highway'
+    roads['road_lvl'] = road_lvl
     tasks = []
     kwargs.update({"gen_plan": genplan.name})
 
     for _, zone in zones.iterrows():
-        tasks.append((district2zone2block_initial, (zone.geometry, zone.zone_name), kwargs))
+        poly = unary_union(zone.geometry.buffer(-(roads_width.get(road_lvl) / 2)))
+        poly = max(poly.geoms, key=lambda x: x.area) if isinstance(poly, MultiPolygon) else poly
+        tasks.append((district2zone2block_initial, (poly, zone.zone_name), kwargs))
     return tasks, True, roads
 
 
@@ -132,16 +143,15 @@ def district2zone2block_initial(task, **kwargs):
         point_radius=poisson_n_radius.get(len(terr_zones), 0.1),
         local_crs=local_crs,
     )
-    roads['road_lvl'] = 'regulated highway'
+    road_lvl = 'regulated highway'
+    roads['road_lvl'] = road_lvl
     tasks = []
     kwargs.update({"func_zone": func_zone.name})
 
-    # data = {key: [value] * len(zones) for key, value in kwargs.items() if key != "local_crs"}
-    # zones = gpd.GeoDataFrame(data=data, geometry=zones.geometry, crs=kwargs.get("local_crs"))
-
     for _, zone in zones.iterrows():
-        tasks.append((zone2block_initial, (zone.geometry, zone.zone_name), kwargs))
-
+        poly = unary_union(zone.geometry.buffer(-(roads_width.get(road_lvl) / 2)))
+        poly = max(poly.geoms, key=lambda x: x.area) if isinstance(poly, MultiPolygon) else poly
+        tasks.append((zone2block_initial, (poly, zone.zone_name), kwargs))
     return tasks, True, roads
 
 
@@ -192,20 +202,28 @@ def zone2block_splitter(task, **kwargs):
         point_radius=poisson_n_radius.get(n_areas, 0.1),
         local_crs=kwargs.get("local_crs"),
     )
-    roads['road_lvl'] = f'local roads, level {round(deep / 10, 1)}'
+    road_lvl = 'local road'
+    roads['road_lvl'] = f'{road_lvl}, level {deep}'
     if deep == len(delimeters):
         data = {key: [value] * len(blocks) for key, value in kwargs.items() if key != "local_crs"}
+        blocks.geometry = blocks.geometry.buffer(-(roads_width.get(road_lvl) / 2))
         blocks = gpd.GeoDataFrame(data=data, geometry=blocks.geometry, crs=kwargs.get("local_crs"))
         return blocks, False, roads
     else:
         deep = deep + 1
         blocks = blocks.geometry
-        try:
-            to_return = [(zone2block_splitter, (Polygon(poly), delimeters, min_area, deep), kwargs) for poly in blocks if
-                         poly is not None]
-        except Exception:
-            raise RuntimeError([poly for poly in blocks])
-        return to_return, True, roads
+        tasks=[]
+        for poly_ in blocks:
+            if poly_ is not None:
+                poly = unary_union(poly_.buffer(-(roads_width.get(road_lvl) / 2)))
+                poly = max(poly.geoms, key=lambda x: x.area) if isinstance(poly, MultiPolygon) else poly
+                try:
+                    Polygon(poly)
+                except Exception:
+                    raise RuntimeError(poly,[str(poly1)+',' for poly1 in blocks])
+                tasks.append((zone2block_splitter, (Polygon(poly), delimeters, min_area, deep), kwargs))
+
+        return tasks, True, roads
 
 
 def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
@@ -215,16 +233,12 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
         future_to_task = {}
         while True:
             while not task_queue.empty() and len(future_to_task) < executor._max_workers:
-                try:
-                    func, task, kwargs = task_queue.get_nowait()
-
-                    future = executor.submit(func, task, **kwargs)
-                    future_to_task[future] = task
-                except multiprocessing.queues.Empty:
-                    break
+                func, task, kwargs = task_queue.get_nowait()
+                future = executor.submit(func, task, **kwargs)
+                future_to_task[future] = task
 
             done, _ = concurrent.futures.wait(
-                future_to_task.keys(), timeout=0, return_when=concurrent.futures.FIRST_COMPLETED
+                future_to_task.keys(), return_when=concurrent.futures.FIRST_COMPLETED
             )
             for future in done:
                 future_to_task.pop(future)
@@ -238,6 +252,7 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
                 roads_all.append(roads)
 
             if not future_to_task and task_queue.empty():
+                print(future_to_task, task_queue)
                 break
     return (gpd.GeoDataFrame(pd.concat(splitted, ignore_index=True), crs=local_crs, geometry="geometry"),
             gpd.GeoDataFrame(pd.concat(roads_all, ignore_index=True), crs=local_crs, geometry="geometry"))
@@ -339,11 +354,11 @@ def _split_polygon(
             devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index").drop(
                 columns=["index", "area", "site_indeed", "zone_id"]
             )
+            for geom in devided_zones.geometry:
+                if isinstance(geom, MultiPolygon):
+                    raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
 
-            # devided_zones.geometry = devided_zones.geometry.apply(
-            #     lambda geom: max(geom.geoms, key=lambda x: x.area) if isinstance(geom, MultiPolygon) else geom
-            # )
-            devided_zones = devided_zones.explode(ignore_index=True)
+
             new_area = devided_zones.area.sum()
             if new_area > polygon.area * 1.1 or new_area < polygon.area * 0.9:
                 raise ValueError(f"Area of devided_zones does not match {new_area}:{polygon.area}")
@@ -355,11 +370,10 @@ def _split_polygon(
             new_roads = gpd.GeoDataFrame(geometry=[LineString(x) for x in new_roads], crs=local_crs)
             return devided_zones, new_roads
 
-        except UnboundLocalError as e:
-            raise ValueError(areas)
         except Exception as e:
             if i + 1 == attempts:
                 raise ValueError(
+                    f' areas_dict:{areas} \n'
                     f' areas:{areas} \n'
                     f' len_points: {len(poisson_points)} \n'
                     f' poly: {normalized_polygon}, \n'
