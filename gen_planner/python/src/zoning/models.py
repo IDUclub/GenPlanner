@@ -15,6 +15,9 @@ class FuncZone:
         self.zones_ratio = zones_ratio
         self.name = name
 
+    def _calc_min_area(self):
+        [(ratio*zone.min_block_area,ratio) for zone,ratio in self.zones_ratio.items()]
+
 
 class GenPlan:
     func_zone_ratio: dict[FuncZone, float]
