@@ -9,6 +9,7 @@ from loguru import logger
 from .task_service import Task, task_queue, task_map
 from .gen_planner_dto import GenPlannerDTO
 from .python.src.genplanner import GenPlanner
+from app.common.exceptions.http_exception import http_exception
 
 
 class GenPlannerService:
@@ -37,6 +38,13 @@ class GenPlannerService:
                 del task_to_check
 
             return result
+
+        raise http_exception(
+            404,
+            msg="Task not found",
+            _input=task_id,
+            _detail=None
+        )
 
     async def add_task_to_queue(
             self,
