@@ -6,7 +6,7 @@ from loguru import logger
 from app.common.config.config import config
 from app.common.exceptions.http_exception import http_exception
 from .python.src.genplanner import GenPlanner
-from .python.src.zoning.standart_implement import FuncZone, basic_scenario
+from .python.src.zoning.standart_implement import FuncZone, basic_func_zone
 
 
 task_queue = Queue()
@@ -19,7 +19,7 @@ class Task:
             self,
             task_id: str,
             processor: GenPlanner,
-            scenario: FuncZone = basic_scenario,
+            scenario: FuncZone = basic_func_zone,
             total_generations: int = 5,
     ) -> None:
         """Task class initialisation function"""

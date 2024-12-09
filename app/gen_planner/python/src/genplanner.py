@@ -8,7 +8,7 @@ from pyproj import CRS
 from rust_optimizer import optimize_space
 from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 
-from app.gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_scenario, gen_plan, GenPlan
+from app.gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_func_zone, gen_plan, GenPlan
 from app.gen_planner.python.src.geom_utils import (
     rotate_coords,
     polygon_angle,
@@ -76,7 +76,7 @@ class GenPlanner:
     def zone2block(self, terr_zone: TerritoryZone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._run(zone2block_initial, self.original_territory, terr_zone, local_crs=self.local_crs)
 
-    def district2zone2block(self, funczone: FuncZone = basic_scenario) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+    def district2zone2block(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._run(district2zone2block_initial, self.original_territory, funczone, local_crs=self.local_crs)
 
     def terr2district2zone2block(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
