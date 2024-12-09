@@ -1,17 +1,15 @@
 import concurrent.futures
 import multiprocessing
-from doctest import UnexpectedException
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 from pyproj import CRS
 from rust_optimizer import optimize_space
-from scipy.stats import false_discovery_control
 from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 
-from gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_scenario, gen_plan, GenPlan
-from gen_planner.python.src.geom_utils import (
+from app.gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_scenario, gen_plan, GenPlan
+from app.gen_planner.python.src.geom_utils import (
     rotate_coords,
     polygon_angle,
     normalize_coords,

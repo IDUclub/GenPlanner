@@ -7,5 +7,7 @@ cache
 /poetry.lock
 __pycache__
 /.ipynb_checkpoints
+draft.ipynb
 idea
 target
+.env.development
