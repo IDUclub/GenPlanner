@@ -211,18 +211,15 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
     roads_all = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_task = {}
+
         while True:
             while not task_queue.empty() and len(future_to_task) < executor._max_workers:
-                try:
-                    func, task, kwargs = task_queue.get_nowait()
-
-                    future = executor.submit(func, task, **kwargs)
-                    future_to_task[future] = task
-                except multiprocessing.queues.Empty:
-                    break
+                func, task, kwargs = task_queue.get_nowait()
+                future = executor.submit(func, task, **kwargs)
+                future_to_task[future] = task
 
             done, _ = concurrent.futures.wait(
-                future_to_task.keys(), timeout=0, return_when=concurrent.futures.FIRST_COMPLETED
+                future_to_task.keys(), return_when=concurrent.futures.FIRST_COMPLETED
             )
             for future in done:
                 future_to_task.pop(future)
