@@ -28,9 +28,9 @@ RUN curl -sSL https://install.python-poetry.org | python3 -
 COPY pyproject.toml poetry.lock ./
 
 RUN poetry install
+RUN poetry add maturin
 
-WORKDIR /app
-COPY . /app
+COPY . .
 
 RUN cd app/gen_planner/rust && poetry run maturin develop
 
