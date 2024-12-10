@@ -1,6 +1,6 @@
 from .models import TerritoryZone, FuncZone, GenPlan
 
-minimum_block_area = 160000
+minimum_block_area = 170000
 
 residential_terr = TerritoryZone(
     "residential",

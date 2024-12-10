@@ -16,15 +16,15 @@ pandas = "^2.2.0"
 geopandas = "^1.0.0"
 loguru = "^0.7.2"
 scipy = "^1.13.1"
+maturin = "^1.7.4"
 
 
-
-[tool.poetry.group.dev.dependencies]
+[tool.poetry.group.dev.dependecies]
 black = "^24.2.0"
 pylint = "^3.0.3"
 isort = "^5.13.2"
 jupyter = "^1.0.0"
-maturin = "^1.7.4"
+
 
 [build-system]
 requires = ["poetry-core"]
