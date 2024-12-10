@@ -113,8 +113,10 @@ class Task:
                 self.errors.append(error_info)
                 break
             try:
-                current_generation_result, roads = self.processor.district2zone2block(self.scenario)
-                json_zones_result = json.loads(current_generation_result.to_json())
+                zones, roads = self.processor.district2zone2block(self.scenario)
+                zones.to_crs(4326, inplace=True)
+                roads.to_crs(4326, inplace=True)
+                json_zones_result = json.loads(zones.to_json())
                 json_roads_result = json.loads(roads.to_json())
                 current_result = {
                     "zones": json_zones_result,
@@ -124,6 +126,7 @@ class Task:
                 self.current_generation += 1
                 generation_retries = 0
             except Exception as e:
+                print(e)
                 logger.warning(e)
                 generation_retries += 1
                 continue

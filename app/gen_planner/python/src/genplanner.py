@@ -1,5 +1,6 @@
 import concurrent.futures
 import multiprocessing
+import time
 
 import geopandas as gpd
 import numpy as np
@@ -211,15 +212,18 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
     roads_all = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_task = {}
-
         while True:
             while not task_queue.empty() and len(future_to_task) < executor._max_workers:
-                func, task, kwargs = task_queue.get_nowait()
-                future = executor.submit(func, task, **kwargs)
-                future_to_task[future] = task
+                try:
+                    func, task, kwargs = task_queue.get_nowait()
+
+                    future = executor.submit(func, task, **kwargs)
+                    future_to_task[future] = task
+                except multiprocessing.queues.Empty:
+                    break
 
             done, _ = concurrent.futures.wait(
-                future_to_task.keys(), return_when=concurrent.futures.FIRST_COMPLETED
+                future_to_task.keys(), timeout=0, return_when=concurrent.futures.FIRST_COMPLETED
             )
             for future in done:
                 future_to_task.pop(future)
@@ -232,6 +236,7 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
                     splitted.append(result)
                 roads_all.append(roads)
 
+            time.sleep(0.01)
             if not future_to_task and task_queue.empty():
                 break
     return (gpd.GeoDataFrame(pd.concat(splitted, ignore_index=True), crs=local_crs, geometry="geometry"),
