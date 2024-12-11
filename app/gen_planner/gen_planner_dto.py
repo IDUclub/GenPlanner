@@ -1,9 +1,10 @@
 import json
 
 from typing import Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.common.geometries import Geometry
+from app.common.exceptions.http_exception import http_exception
 
 with open("app/common/example_geometry.json") as et:
     example_territory =json.load(et)
@@ -16,25 +17,37 @@ class GenPlannerDTO(BaseModel):
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):
 
+    project_id: int = Field(...,examples=[72], description="The project ID")
     scenario: Literal[
-        "Профиль: Базовый",
-        "Профиль: Жилая зона",
-        "Профиль: Промышленная зона",
-        "Профиль: Общественно-деловая зона",
-        "Профиль: Рекреационная зона",
-        "Профиль: Транспортная зона",
-        "Профиль: Сельскохозяйственная зона",
-        "Профиль: Особого назначения"
-    ] = Field(..., examples=["Профиль: Базовый"], description="Scenario func zone type")
+        8, 1, 4, 7, 2, 6, 5, 3
+    ] | int = Field(..., examples=[8], description="Scenario func zone type")
 
+    @classmethod
+    @field_validator("scenario", mode="before")
+    def validate_project_id(cls, v):
+        if v.isnumeric():
+            return int(v)
+        raise http_exception(
+            400,
+            "Project ID is invalid",
+            _input=v,
+            _detail="Input should be numeric"
+        )
 
 class GenPlannerTerZonesDTO(GenPlannerDTO):
+    project_id: int = Field(..., examples=[72], description="Project ID")
     scenario: Literal[
-        "Профиль: Жилая зона",
-        "Профиль: Промышленная зона",
-        "Профиль: Общественно-деловая зона",
-        "Профиль: Рекреационная зона",
-        "Профиль: Транспортная зона",
-        "Профиль: Сельскохозяйственная зона",
-        "Профиль: Особого назначения"
-] = Field(..., examples=["Профиль: Жилая зона"], description="Scenario ter zone type")
+        1, 4, 7, 2, 6, 5, 3
+    ] | int = Field(..., examples=[1], description="Scenario ter zone type")
+
+    @classmethod
+    @field_validator("scenario", mode="before")
+    def validate_project_id(cls, v):
+        if v.isnumeric():
+            return int(v)
+        raise http_exception(
+            400,
+            "Project ID is invalid",
+            _input=v,
+            _detail="Input should be numeric"
+        )

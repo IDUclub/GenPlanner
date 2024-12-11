@@ -15,6 +15,7 @@ from .api_constants import scenario_func_zones_map, scenario_ter_zones_map
 from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone
 from .gen_planner_dto import GenPlannerFuncZonesDTO, GenPlannerTerZonesDTO
 from .gen_planner_schema import GenPlannerResultSchema
+from .gen_planner_api_service import gen_planner_api_service
 # from .gen_planner_service import gen_planner_service
 
 
@@ -81,7 +82,7 @@ def generate(
 @gen_planner_router.get("/gen_planner/territories_list", response_model=list[str])
 async def get_available_territories_profiles():
     """
-    :return: list of available territories zones to run in genplanner
+    :return: list of available territories zones to run in genplanner by ids
     """
 
     result = [i for i in scenario_ter_zones_map]
@@ -90,7 +91,7 @@ async def get_available_territories_profiles():
 @gen_planner_router.get("/gen_planner/zones_list", response_model=list[str])
 async def get_available_zones_profiles():
     """
-    :return: list of available func zones to run in genplanner
+    :return: list of available func zones to run in genplanner by ids
     """
 
     result = [i for i in scenario_func_zones_map]
@@ -102,10 +103,7 @@ async def run_ter_territory_zones_generation(
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_ter_zones_map.get(params.scenario)
-    territory = gpd.GeoDataFrame(
-        geometry=[shape(params.territory.__dict__)],
-        crs=4326
-    )
+    territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
     generation_result = await asyncio.to_thread(
         generate,
         scenario=scenario,
@@ -121,10 +119,7 @@ async def run_func_territory_zones_generation(
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_func_zones_map.get(params.scenario)
-    territory = gpd.GeoDataFrame(
-        geometry=[shape(params.territory.__dict__)],
-        crs=4326
-    )
+    territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
     generation_result = await asyncio.to_thread(
         generate,
         scenario=scenario,
