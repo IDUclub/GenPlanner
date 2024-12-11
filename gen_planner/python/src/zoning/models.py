@@ -3,7 +3,7 @@ class TerritoryZone:
     name: str
 
     def __init__(self, name, min_block_area: float = 160000):
-        self.min_block_area = min_block_area
+        self.min_block_area = min_block_area+10000
         self.name = name
 
     def __str__(self):

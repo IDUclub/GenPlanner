@@ -2,7 +2,7 @@ import math
 
 import numpy as np
 from scipy.stats._qmc import PoissonDisk
-from shapely import Point, Polygon
+from shapely import Point, Polygon, MultiPolygon, LineString, MultiLineString
 
 
 def rotate_coords(coords: list, pivot: Point, angle_rad: float) -> list[tuple[float, float]]:
@@ -88,3 +88,19 @@ def generate_points(area_to_fill: Polygon, radius, seed=None):
     points_in_polygon = np.array([point for point in points])
 
     return points_in_polygon
+
+def polygons_to_linestring(geom: Polygon | MultiPolygon):
+    def convert_polygon(polygon: Polygon):
+        lines = []
+        exterior = LineString(polygon.exterior.coords)
+        lines.append(exterior)
+        interior = [LineString(p.coords) for p in polygon.interiors]
+        lines = lines + interior
+        return lines
+
+    def convert_multipolygon(polygon: MultiPolygon):
+        return MultiLineString(sum([convert_polygon(p) for p in polygon.geoms], []))
+
+    if geom.geom_type == "Polygon":
+        return MultiLineString(convert_polygon(geom))
+    return convert_multipolygon(geom)
