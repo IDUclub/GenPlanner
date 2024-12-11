@@ -12,6 +12,7 @@ roads_width_def = config.roads_width_def.copy()
 def terr2district2zone2block_initial(task, **kwargs):
     territory, genplan = task
     areas_dict = genplan.func_zone_ratio
+    # raise RuntimeError(territory.area, genplan.min_zone_area)
     local_crs = kwargs.get("local_crs")
     zones, roads = _split_polygon(
         polygon=territory,

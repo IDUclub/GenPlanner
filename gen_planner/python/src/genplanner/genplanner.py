@@ -35,15 +35,15 @@ class GenPlanner:
         if rotation:
             self.rotation = True
             coord = self.original_territory.exterior.coords
-            if isinstance(rotation, (float, int)):
+            if rotation is not True:
                 self.angle_rad_to_rotate = np.deg2rad(rotation)
-                self.original_territory = Polygon(rotate_coords(coord, self.pivot_point, self.angle_rad_to_rotate))
+                self.original_territory = Polygon(rotate_coords(coord, self.pivot_point, -self.angle_rad_to_rotate))
             else:
                 self.angle_rad_to_rotate = polygon_angle(self.original_territory)
-
                 self.original_territory = Polygon(rotate_coords(coord, self.pivot_point, -self.angle_rad_to_rotate))
         else:
             self.rotation = False
+
 
     def _gdf_to_poly(self, gdf: gpd.GeoDataFrame) -> Polygon:
         self.local_crs = gdf.estimate_utm_crs()
@@ -65,16 +65,23 @@ class GenPlanner:
             roads.geometry = roads.geometry.apply(
                 lambda x: LineString(rotate_coords(x.coords, self.pivot_point, self.angle_rad_to_rotate))
             )
+
         roads_poly = roads.copy()
         roads_poly.geometry = roads_poly.apply(lambda x: x.geometry.buffer(x.roads_width / 2, resolution=4), axis=1)
         roads_poly = roads_poly.union_all()
+
         all_data = pd.concat([res, gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs)])["geometry"]
         polygons = gpd.GeoDataFrame(
             geometry=list(polygonize(all_data.apply(polygons_to_linestring).union_all())), crs=self.local_crs
         )
-        res.geometry = res.geometry.buffer(-10).representative_point()
-        res = res.sjoin(polygons, how="left", predicate="within")
-        res["geometry"] = res["index_right"].map(polygons["geometry"])
+        polygons_points = polygons.copy()
+        polygons_points.geometry = polygons_points.representative_point()
+        to_kick = polygons_points.sjoin(gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs),
+                                        predicate='within').index
+        polygons_points.drop(to_kick, inplace=True)
+        polygons_points = polygons_points.sjoin(res, how='inner', predicate="within")
+        polygons_points.geometry = polygons.loc[polygons_points.index].geometry
+        res = polygons_points
         res.drop(columns=["index_right"], inplace=True)
         return res, roads
 
