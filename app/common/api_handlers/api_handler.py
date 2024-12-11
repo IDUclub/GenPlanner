@@ -76,6 +76,7 @@ class AsyncApiHandler:
                 url=endpoint_url,
                 params=params,
                 headers=headers,
+                timeout=int(config.get_default("MAX_TIMEOUT", 45))
             ) as response:
                 result = await self._return_result_or_raise_error(
                     response=response,

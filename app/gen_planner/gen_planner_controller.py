@@ -79,7 +79,7 @@ def generate(
                 logger.warning(e)
                 continue
 
-@gen_planner_router.get("/gen_planner/territories_list", response_model=list[str])
+@gen_planner_router.get("/gen_planner/territories_list", response_model=list[int])
 async def get_available_territories_profiles():
     """
     :return: list of available territories zones to run in genplanner by ids
@@ -88,7 +88,7 @@ async def get_available_territories_profiles():
     result = [i for i in scenario_ter_zones_map]
     return result
 
-@gen_planner_router.get("/gen_planner/zones_list", response_model=list[str])
+@gen_planner_router.get("/gen_planner/zones_list", response_model=list[int])
 async def get_available_zones_profiles():
     """
     :return: list of available func zones to run in genplanner by ids
