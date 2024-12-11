@@ -1,6 +1,6 @@
 import json
 
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.common.geometries import Geometry
@@ -12,7 +12,7 @@ with open("app/common/example_geometry.json") as et:
 
 class GenPlannerDTO(BaseModel):
 
-    territory: Geometry = Field(..., examples=[example_territory], description="The territory polygon")
+    territory: Optional[Geometry] = Field(default=None, examples=[example_territory], description="The territory polygon")
 
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):

@@ -103,7 +103,10 @@ async def run_ter_territory_zones_generation(
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_ter_zones_map.get(params.scenario)
-    territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
+    if params.territory:
+        territory = gpd.GeoDataFrame(geometry=[shape(params.territory).__dict__], crs=params.crs)
+    else:
+        territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
     generation_result = await asyncio.to_thread(
         generate,
         scenario=scenario,
@@ -119,7 +122,10 @@ async def run_func_territory_zones_generation(
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_func_zones_map.get(params.scenario)
-    territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
+    if params.territory:
+        territory = gpd.GeoDataFrame(geometry=[shape(params.territory).__dict__], crs=params.crs)
+    else:
+        territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
     generation_result = await asyncio.to_thread(
         generate,
         scenario=scenario,
