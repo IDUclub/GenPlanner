@@ -31,7 +31,6 @@ black = "^24.2.0"
 pylint = "^3.0.3"
 isort = "^5.13.2"
 jupyter = "^1.0.0"
-maturin = "^1.7.4"
 
 [build-system]
 requires = ["poetry-core"]
