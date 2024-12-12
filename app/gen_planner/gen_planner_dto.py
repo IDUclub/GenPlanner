@@ -20,7 +20,7 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
     project_id: int = Field(...,examples=[72], description="The project ID")
     scenario: Literal[
         8, 1, 4, 7, 2, 6, 5, 3
-    ] | int = Field(..., examples=[8], description="Scenario func zone type")
+    ] | int = Field(..., description="Scenario func zone type")
 
     @classmethod
     @field_validator("scenario", mode="before")
@@ -35,10 +35,10 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
         )
 
 class GenPlannerTerZonesDTO(GenPlannerDTO):
-    project_id: int = Field(..., examples=[72], description="Project ID")
+    project_id: int = Field(..., description="Project ID")
     scenario: Literal[
         1, 4, 7, 2, 6, 5, 3
-    ] | int = Field(..., examples=[1], description="Scenario ter zone type")
+    ] | int = Field(..., description="Scenario ter zone type")
 
     @classmethod
     @field_validator("scenario", mode="before")
