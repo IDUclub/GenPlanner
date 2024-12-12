@@ -9,8 +9,9 @@ from app.gen_planner.python.src._config import config
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()
 
+
 def terr2district2zone2block_initial(task, **kwargs):
-    territory, genplan = task
+    territory, genplan, split_further = task
     areas_dict = genplan.func_zone_ratio
     # raise RuntimeError(territory.area, genplan.min_zone_area)
     local_crs = kwargs.get("local_crs")
@@ -22,9 +23,11 @@ def terr2district2zone2block_initial(task, **kwargs):
     )
     road_lvl = "high speed highway"
     roads["road_lvl"] = road_lvl
-    roads['roads_width'] = roads_width_def.get('high speed highway')
+    roads["roads_width"] = roads_width_def.get("high speed highway")
     tasks = []
     kwargs.update({"gen_plan": genplan.name})
+    if not split_further:
+        return zones, False, roads
 
     for _, zone in zones.iterrows():
         tasks.append((district2zone2block_initial, (zone.geometry, zone.zone_name), kwargs))
@@ -32,7 +35,7 @@ def terr2district2zone2block_initial(task, **kwargs):
 
 
 def district2zone2block_initial(task, **kwargs):
-    district, func_zone = task
+    district, func_zone, split_further = task
 
     def recalculate_ratio(data, area):
         data["ratio"] = data["ratio"] / data["ratio"].sum()
@@ -61,7 +64,7 @@ def district2zone2block_initial(task, **kwargs):
     )
     road_lvl = "regulated highway"
     roads["road_lvl"] = road_lvl
-    roads['roads_width'] = roads_width_def.get('regulated highway')
+    roads["roads_width"] = roads_width_def.get("regulated highway")
     tasks = []
     kwargs.update({"func_zone": func_zone.name})
 
@@ -82,8 +85,11 @@ def zone2block_initial(task, **kwargs):
         temp_area = temp_area * max_delimeter
         delimeters.append(max_delimeter)
     if len(delimeters) == 0:
-        return [(zone2block_splitter, (zone_to_split, [1], min_area, 1, [roads_width_def.get('local road')]),
-                 kwargs)], True, gpd.GeoDataFrame()
+        return (
+            [(zone2block_splitter, (zone_to_split, [1], min_area, 1, [roads_width_def.get("local road")]), kwargs)],
+            True,
+            gpd.GeoDataFrame(),
+        )
 
     min_split = 2
     if len(delimeters) == 1:
@@ -96,8 +102,11 @@ def zone2block_initial(task, **kwargs):
             i += 1
         temp_area = min_area * np.prod(delimeters)
     delimeters[i] = delimeters[i] + 1
-    roads_widths = np.linspace(int(roads_width_def.get('regulated highway') * 0.66), roads_width_def.get('local road'),
-                               len(delimeters))
-    return [
-        (zone2block_splitter, (zone_to_split, delimeters, min_area, 1, roads_widths), kwargs)], True, gpd.GeoDataFrame()
-
+    roads_widths = np.linspace(
+        int(roads_width_def.get("regulated highway") * 0.66), roads_width_def.get("local road"), len(delimeters)
+    )
+    return (
+        [(zone2block_splitter, (zone_to_split, delimeters, min_area, 1, roads_widths), kwargs)],
+        True,
+        gpd.GeoDataFrame(),
+    )

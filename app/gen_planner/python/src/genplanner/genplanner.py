@@ -44,7 +44,6 @@ class GenPlanner:
         else:
             self.rotation = False
 
-
     def _gdf_to_poly(self, gdf: gpd.GeoDataFrame) -> Polygon:
         self.local_crs = gdf.estimate_utm_crs()
         poly = gdf.to_crs(self.local_crs).union_all()
@@ -76,10 +75,11 @@ class GenPlanner:
         )
         polygons_points = polygons.copy()
         polygons_points.geometry = polygons_points.representative_point()
-        to_kick = polygons_points.sjoin(gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs),
-                                        predicate='within').index
+        to_kick = polygons_points.sjoin(
+            gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs), predicate="within"
+        ).index
         polygons_points.drop(to_kick, inplace=True)
-        polygons_points = polygons_points.sjoin(res, how='inner', predicate="within")
+        polygons_points = polygons_points.sjoin(res, how="inner", predicate="within")
         polygons_points.geometry = polygons.loc[polygons_points.index].geometry
         res = polygons_points
         res.drop(columns=["index_right"], inplace=True)
@@ -88,11 +88,19 @@ class GenPlanner:
     def zone2block(self, terr_zone: TerritoryZone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._run(zone2block_initial, self.original_territory, terr_zone, local_crs=self.local_crs)
 
-    def district2zone2block(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(district2zone2block_initial, self.original_territory, funczone, local_crs=self.local_crs)
+    def district2zone2block(
+        self, funczone: FuncZone = basic_func_zone, split_further=True
+    ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(
+            district2zone2block_initial, self.original_territory, funczone, split_further, local_crs=self.local_crs
+        )
 
-    def terr2district2zone2block(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(terr2district2zone2block_initial, self.original_territory, genplan, local_crs=self.local_crs)
+    def terr2district2zone2block(
+        self, genplan: GenPlan = gen_plan, split_further=True
+    ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(
+            terr2district2zone2block_initial, self.original_territory, genplan, split_further, local_crs=self.local_crs
+        )
 
 
 def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
