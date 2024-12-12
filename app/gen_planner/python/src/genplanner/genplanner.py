@@ -9,13 +9,13 @@ from pyproj import CRS
 from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 from shapely.ops import polygonize
 
-from gen_planner.python.src import TerritoryZone, FuncZone, basic_func_zone, gen_plan, GenPlan
-from gen_planner.python.src import (
+from app.gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_func_zone, gen_plan, GenPlan
+from app.gen_planner.python.src.tasks import (
     zone2block_initial,
     terr2district2zone2block_initial,
     district2zone2block_initial,
 )
-from gen_planner.python.src import (
+from app.gen_planner.python.src.utils import (
     rotate_coords,
     polygon_angle,
     polygons_to_linestring,

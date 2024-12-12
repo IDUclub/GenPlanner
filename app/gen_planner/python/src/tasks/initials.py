@@ -2,9 +2,9 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from gen_planner.python.src import _split_polygon, zone2block_splitter
+from app.gen_planner.python.src.tasks.splitters import _split_polygon, zone2block_splitter
 
-from gen_planner.python.src import config
+from app.gen_planner.python.src._config import config
 
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()

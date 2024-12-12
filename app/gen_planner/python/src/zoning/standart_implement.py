@@ -126,7 +126,7 @@ special_func_zone = FuncZone(
 
 gen_plan = GenPlan(
     name="General Plan",
-    scenarios_ratio={
+    func_zone_ratio={
         recreation_func_zone: 0.333,
         residential_func_zone: 0.277,
         industrial_func_zone: 0.133,

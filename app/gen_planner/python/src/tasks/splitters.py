@@ -5,12 +5,12 @@ from pyproj import CRS
 from rust_optimizer import optimize_space
 from shapely.geometry import Polygon, MultiPolygon, LineString
 
-from gen_planner.python.src import (
+from app.gen_planner.python.src.utils import (
     normalize_coords,
     denormalize_coords,
     generate_points,
 )
-from gen_planner.python.src import config
+from app.gen_planner.python.src._config import config
 
 poisson_n_radius = config.poisson_n_radius.copy()
 
