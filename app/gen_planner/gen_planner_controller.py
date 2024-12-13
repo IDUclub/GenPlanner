@@ -49,7 +49,7 @@ def generate(
     if func_type == "zone":
         for i in range(15):
             try:
-                zones, roads = gen_planner.district2zone2block(scenario)
+                zones, roads = gen_planner.poly2terr2block(scenario)
                 zones.to_crs(4326, inplace=True)
                 roads.to_crs(4326, inplace=True)
                 zones_json = json.loads(zones.to_json())
@@ -65,7 +65,7 @@ def generate(
     elif func_type == "ter":
         for i in range(20):
             try:
-                zones, roads = gen_planner.zone2block(scenario)
+                zones, roads = gen_planner.poly2block(scenario)
                 zones.to_crs(4326, inplace=True)
                 roads.to_crs(4326, inplace=True)
                 zones_json = json.loads(zones.to_json())

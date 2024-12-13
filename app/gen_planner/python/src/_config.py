@@ -1,6 +1,6 @@
 import sys
 from typing import Literal
-
+import os
 from loguru import logger
 
 
@@ -21,6 +21,7 @@ class Config:
             self,
     ):
         self.logger = logger
+        print(f'Available workers count {os.cpu_count()}')
 
     def change_logger_lvl(self, lvl: Literal["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]):
         self.logger.remove()
