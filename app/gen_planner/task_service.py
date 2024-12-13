@@ -113,7 +113,7 @@ class Task:
                 self.errors.append(error_info)
                 break
             try:
-                zones, roads = self.processor.district2zone2block(self.scenario)
+                zones, roads = self.processor.poly2terr2block(self.scenario)
                 zones.to_crs(4326, inplace=True)
                 roads.to_crs(4326, inplace=True)
                 json_zones_result = json.loads(zones.to_json())

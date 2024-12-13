@@ -9,11 +9,13 @@ from pyproj import CRS
 from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 from shapely.ops import polygonize
 
+
 from app.gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_func_zone, gen_plan, GenPlan
 from app.gen_planner.python.src.tasks import (
-    zone2block_initial,
-    terr2district2zone2block_initial,
-    district2zone2block_initial,
+    poly2block_initial,
+    poly2func2terr2block_initial,
+    poly2terr2block_initial,
+    polygon_splitter,
 )
 from app.gen_planner.python.src.utils import (
     rotate_coords,
@@ -43,7 +45,6 @@ class GenPlanner:
                 self.original_territory = Polygon(rotate_coords(coord, self.pivot_point, -self.angle_rad_to_rotate))
         else:
             self.rotation = False
-
 
     def _gdf_to_poly(self, gdf: gpd.GeoDataFrame) -> Polygon:
         self.local_crs = gdf.estimate_utm_crs()
@@ -76,23 +77,45 @@ class GenPlanner:
         )
         polygons_points = polygons.copy()
         polygons_points.geometry = polygons_points.representative_point()
-        to_kick = polygons_points.sjoin(gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs),
-                                        predicate='within').index
+        to_kick = polygons_points.sjoin(
+            gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs), predicate="within"
+        ).index
         polygons_points.drop(to_kick, inplace=True)
-        polygons_points = polygons_points.sjoin(res, how='inner', predicate="within")
+        polygons_points = polygons_points.sjoin(res, how="inner", predicate="within")
         polygons_points.geometry = polygons.loc[polygons_points.index].geometry
         res = polygons_points
         res.drop(columns=["index_right"], inplace=True)
         return res, roads
 
-    def zone2block(self, terr_zone: TerritoryZone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(zone2block_initial, self.original_territory, terr_zone, local_crs=self.local_crs)
+    def split_poly(self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None):
+        if zones_ratio_dict is None and zones_n is None:
+            raise RuntimeError("Either zones_ratio_dict or zones_n must be set")
+        if len(zones_ratio_dict) in [0, 1]:
+            raise ValueError("zones_ratio_dict ")
+        if zones_n is not None:
+            zones_ratio_dict = {x: 1 / zones_n for x in range(zones_n)}
+        if len(zones_ratio_dict) > 8:
+            raise RuntimeError("Use poly2block, to split more than 8 parts")
+        return self._run(
+            polygon_splitter, self.original_territory, zones_ratio_dict, roads_width, local_crs=self.local_crs
+        )
 
-    def district2zone2block(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(district2zone2block_initial, self.original_territory, funczone, local_crs=self.local_crs)
+    def poly2block(self, terr_zone: TerritoryZone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(poly2block_initial, self.original_territory, terr_zone, local_crs=self.local_crs)
 
-    def terr2district2zone2block(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(terr2district2zone2block_initial, self.original_territory, genplan, local_crs=self.local_crs)
+    def poly2terr(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(poly2terr2block_initial, self.original_territory, funczone, False, local_crs=self.local_crs)
+
+    def poly2terr2block(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(poly2terr2block_initial, self.original_territory, funczone, True, local_crs=self.local_crs)
+
+    def poly2func(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(
+            poly2func2terr2block_initial, self.original_territory, genplan, False, local_crs=self.local_crs
+        )
+
+    def poly2func2terr2block(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        return self._run(poly2func2terr2block_initial, self.original_territory, genplan, True, local_crs=self.local_crs)
 
 
 def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):

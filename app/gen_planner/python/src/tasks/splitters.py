@@ -13,9 +13,27 @@ from app.gen_planner.python.src.utils import (
 from app.gen_planner.python.src._config import config
 
 poisson_n_radius = config.poisson_n_radius.copy()
+roads_width_def = config.roads_width_def.copy()
 
-def zone2block_splitter(task, **kwargs):
+
+def polygon_splitter(task, **kwargs):
+    polygon, areas_dict, roads_width = task
+    n_areas = len(areas_dict)
+    blocks, roads = _split_polygon(
+        polygon=polygon,
+        areas_dict=areas_dict,
+        point_radius=poisson_n_radius.get(n_areas, 0.1),
+        local_crs=kwargs.get("local_crs"),
+        dev=True,
+    )
+    roads["road_lvl"] = "undefined"  # TODO kwargs??
+    roads["roads_width"] = roads_width if roads_width is not None else roads_width_def.get("local road")
+    return blocks, False, roads
+
+
+def poly2block_splitter(task, **kwargs):
     polygon, delimeters, min_area, deep, roads_widths = task
+
     if deep == len(delimeters):
         n_areas = min(8, int(polygon.area // min_area))
         if n_areas in [0, 1]:
@@ -32,12 +50,12 @@ def zone2block_splitter(task, **kwargs):
         areas_dict=areas_dict,
         point_radius=poisson_n_radius.get(n_areas, 0.1),
         local_crs=kwargs.get("local_crs"),
-        dev = True
+        dev=True,
     )
 
     road_lvl = "local road"
     roads["road_lvl"] = f"{road_lvl}, level {deep}"
-    roads['roads_width'] = roads_widths[deep - 1]
+    roads["roads_width"] = roads_widths[deep - 1]
     if deep == len(delimeters):
         data = {key: [value] * len(blocks) for key, value in kwargs.items() if key != "local_crs"}
         blocks = gpd.GeoDataFrame(data=data, geometry=blocks.geometry, crs=kwargs.get("local_crs"))
@@ -48,18 +66,18 @@ def zone2block_splitter(task, **kwargs):
         tasks = []
         for poly in blocks:
             if poly is not None:
-                tasks.append((zone2block_splitter, (Polygon(poly), delimeters, min_area, deep, roads_widths), kwargs))
+                tasks.append((poly2block_splitter, (Polygon(poly), delimeters, min_area, deep, roads_widths), kwargs))
 
         return tasks, True, roads
 
 
 def _split_polygon(
-        polygon: Polygon,
-        areas_dict: dict,
-        local_crs: CRS,
-        point_radius: float = 0.1,
-        zone_connections: list = None,
-        dev = False,
+    polygon: Polygon,
+    areas_dict: dict,
+    local_crs: CRS,
+    point_radius: float = 0.1,
+    zone_connections: list = None,
+    dev=False,
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
 
     if zone_connections is None:
@@ -151,7 +169,7 @@ def _split_polygon(
                 raise ValueError(f"Number of devided_zones does not match {len(areas)}: {len(devided_zones)}")
 
             devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index").drop(
-                columns=["index", "area", "site_indeed", "zone_id"]
+                columns=["index", "area", "site_indeed", "zone_id", "ratio_sqrt", "area_sqrt"]
             )
             for geom in devided_zones.geometry:
                 if isinstance(geom, MultiPolygon):
@@ -166,6 +184,7 @@ def _split_polygon(
                 for x in np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)
             ]
             new_roads = gpd.GeoDataFrame(geometry=[LineString(x) for x in new_roads], crs=local_crs)
+
             return devided_zones, new_roads
 
         except Exception as e:
