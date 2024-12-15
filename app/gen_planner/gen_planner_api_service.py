@@ -1,8 +1,9 @@
-from app.common.config.config import config
-from app.common.api_handlers.api_handler import urban_api_handler
-
 import geopandas as gpd
 from shapely.geometry import shape
+
+from app.common.api_handlers.api_handler import urban_api_handler
+from app.common.config.config import config
+
 
 class GenPlannerApiService:
 
@@ -13,8 +14,8 @@ class GenPlannerApiService:
         self.projects = "/projects"
 
     async def get_territory_geom_by_project_id(
-            self,
-            project_id: int,
+        self,
+        project_id: int,
     ) -> gpd.GeoDataFrame:
 
         url = f"{self.v1}{self.projects}/{project_id}/territory"

@@ -1,8 +1,26 @@
 import math
 
+import geopandas as gpd
 import numpy as np
 from scipy.stats._qmc import PoissonDisk
-from shapely import Point, Polygon, MultiPolygon, LineString, MultiLineString
+from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
+
+
+def rotate_poly(poly: Polygon | MultiPolygon, pivot_point, angle_rad) -> Polygon | MultiPolygon:
+    if isinstance(poly, Polygon):
+        return Polygon(rotate_coords(poly.exterior.coords, pivot_point, angle_rad))
+    return MultiPolygon([Polygon(rotate_coords(geom.exterior.coords, pivot_point, angle_rad)) for geom in poly.geoms])
+
+
+def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
+    gdf = gdf.copy()
+    multip = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs).explode(ignore_index=True)
+    max_dist = np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0))
+    poly = multip.buffer(max_dist,resolution=4).union_all().buffer(-max_dist,resolution=4)
+    if isinstance(poly, MultiPolygon):
+        raise RuntimeError("Cant cast Multipolygon to Polygon")
+    poly = Polygon(poly.exterior)
+    return poly
 
 
 def rotate_coords(coords: list, pivot: Point, angle_rad: float) -> list[tuple[float, float]]:
@@ -26,10 +44,7 @@ def polygon_angle(rect: Polygon) -> float:
     coords = list(rect.exterior.coords)[:-1]
     sides = [(coords[0], coords[1]), (coords[1], coords[2])]
 
-    lengths = [
-        math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
-        for (x1, y1), (x2, y2) in sides
-    ]
+    lengths = [math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) for (x1, y1), (x2, y2) in sides]
     long_side_idx = lengths.index(max(lengths))
     long_side = sides[long_side_idx]
 
@@ -44,10 +59,7 @@ def normalize_coords(coords: list[tuple[float, float]], bounds: tuple):
     height = maxy - miny
     scale = max(width, height)
     cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
-    normalized_coords = [
-        ((x - cx) / scale + 0.5, (y - cy) / scale + 0.5)
-        for x, y in coords
-    ]
+    normalized_coords = [((x - cx) / scale + 0.5, (y - cy) / scale + 0.5) for x, y in coords]
     return normalized_coords
 
 
@@ -57,15 +69,10 @@ def denormalize_coords(normalized_coords: list[tuple[float, float]], bounds: tup
     height = maxy - miny
     scale = max(width, height)
     cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
-    denormalized_coords = [
-        (
-            (x - 0.5) * scale + cx,
-            (y - 0.5) * scale + cy
-        )
-        for x, y in normalized_coords
-    ]
+    denormalized_coords = [((x - 0.5) * scale + cx, (y - 0.5) * scale + cy) for x, y in normalized_coords]
 
     return denormalized_coords
+
 
 def generate_points(area_to_fill: Polygon, radius, seed=None):
     if seed is None:
@@ -80,7 +87,7 @@ def generate_points(area_to_fill: Polygon, radius, seed=None):
     norm_radius = radius / max(width, height)
 
     engine = PoissonDisk(d=2, radius=norm_radius, seed=seed)
-    points = engine.random(int(bbox.area // (math.pi * radius ** 2)) * 10)
+    points = engine.random(int(bbox.area // (math.pi * radius**2)) * 10)
 
     points[:, 0] = points[:, 0] * width + min_x
     points[:, 1] = points[:, 1] * height + min_y
@@ -88,6 +95,7 @@ def generate_points(area_to_fill: Polygon, radius, seed=None):
     points_in_polygon = np.array([point for point in points])
 
     return points_in_polygon
+
 
 def polygons_to_linestring(geom: Polygon | MultiPolygon):
     def convert_polygon(polygon: Polygon):

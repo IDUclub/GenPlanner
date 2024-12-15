@@ -5,4 +5,6 @@ from .geom_utils import (
     denormalize_coords,
     generate_points,
     polygons_to_linestring,
+    elastic_wrap,
+    rotate_poly,
 )

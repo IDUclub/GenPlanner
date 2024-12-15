@@ -3,14 +3,14 @@ import numpy as np
 import pandas as pd
 from pyproj import CRS
 from rust_optimizer import optimize_space
-from shapely.geometry import Polygon, MultiPolygon, LineString
+from shapely.geometry import LineString, MultiPolygon, Polygon
 
+from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.utils import (
-    normalize_coords,
     denormalize_coords,
     generate_points,
+    normalize_coords,
 )
-from app.gen_planner.python.src._config import config
 
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()

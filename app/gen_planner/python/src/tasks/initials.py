@@ -1,10 +1,11 @@
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-
-from app.gen_planner.python.src.tasks.splitters import _split_polygon, poly2block_splitter
+from shapely import LineString
 
 from app.gen_planner.python.src._config import config
+from app.gen_planner.python.src.tasks.splitters import _split_polygon, poly2block_splitter
+from app.gen_planner.python.src.utils import elastic_wrap
 
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()
@@ -35,6 +36,22 @@ def poly2func2terr2block_initial(task, **kwargs):
         tasks.append((poly2terr2block_initial, (zone.geometry, zone.zone_name, True), kwargs))
     return tasks, True, roads
 
+
+def multipoly2func2terr2block_initial(task, **kwargs):
+    multiterritory, genplan, split_further = task
+    areas_dict = genplan.func_zone_ratio
+    local_crs = kwargs.get("local_crs")
+
+    territory = elastic_wrap(gpd.GeoDataFrame(geometry=[multiterritory],crs=local_crs)).simplify(400)
+    # return gpd.GeoDataFrame(geometry=[territory],crs=local_crs), False, gpd.GeoDataFrame(data =[1],geometry=[LineString(territory.exterior)],columns=['roads_width'],crs=local_crs)
+    zones, roads = _split_polygon(
+        polygon=territory,
+        areas_dict=areas_dict,
+        point_radius=poisson_n_radius.get(len(areas_dict), 0.1),
+        local_crs=local_crs,
+    )
+    roads["roads_width"] = 10
+    return zones, False, roads
 
 def poly2terr2block_initial(task, **kwargs):
     poly, func_zone, split_further = task

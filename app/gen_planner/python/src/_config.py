@@ -1,6 +1,7 @@
+import os
 import sys
 from typing import Literal
-import os
+
 from loguru import logger
 
 
@@ -18,10 +19,10 @@ class Config:
     roads_width_def = {"high speed highway": 60, "regulated highway": 30, "local road": 10}
 
     def __init__(
-            self,
+        self,
     ):
         self.logger = logger
-        print(f'Available workers count {os.cpu_count()}')
+        print(f"Available workers count {os.cpu_count()}")
 
     def change_logger_lvl(self, lvl: Literal["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]):
         self.logger.remove()

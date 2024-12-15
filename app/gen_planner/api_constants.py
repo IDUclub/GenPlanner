@@ -1,5 +1,4 @@
-from app.gen_planner.python.src.zoning import func_zones, terr_zones, basic_func_zone
-
+from app.gen_planner.python.src.zoning import basic_func_zone, func_zones, terr_zones
 
 scenario_func_zones_map = {
     8: basic_func_zone,
@@ -9,7 +8,7 @@ scenario_func_zones_map = {
     2: func_zones.recreation_func_zone,
     6: func_zones.transport_func_zone,
     5: func_zones.agricalture_func_zone,
-    3: func_zones.special_func_zone
+    3: func_zones.special_func_zone,
 }
 
 scenario_ter_zones_map = {
@@ -19,7 +18,7 @@ scenario_ter_zones_map = {
     2: terr_zones.recreation_terr,
     6: terr_zones.transport_terr,
     5: terr_zones.agriculture_terr,
-    3: terr_zones.special_terr
+    3: terr_zones.special_terr,
 }
 
 print([i for i in scenario_func_zones_map])

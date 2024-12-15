@@ -2,20 +2,20 @@ import asyncio
 import json
 from typing import Annotated
 
+import geopandas as gpd
+from fastapi import APIRouter, Depends
+from geojson_pydantic import FeatureCollection
 from loguru import logger
+from shapely.geometry import shape
 
 from app.gen_planner.python.src.genplanner import GenPlanner
-
-from fastapi import APIRouter, Depends
-import geopandas as gpd
-from shapely.geometry import shape
-from geojson_pydantic import FeatureCollection
+from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone
 
 from .api_constants import scenario_func_zones_map, scenario_ter_zones_map
-from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone
+from .gen_planner_api_service import gen_planner_api_service
 from .gen_planner_dto import GenPlannerFuncZonesDTO, GenPlannerTerZonesDTO
 from .gen_planner_schema import GenPlannerResultSchema
-from .gen_planner_api_service import gen_planner_api_service
+
 # from .gen_planner_service import gen_planner_service
 
 
@@ -32,10 +32,11 @@ gen_planner_router = APIRouter(tags=["gen_planner"])
 #     result = await gen_planner_service.get_task_status(task_id)
 #     return result
 
+
 def generate(
-        scenario: FuncZone | TerritoryZone,
-        func_type: str,
-        territory: gpd.GeoDataFrame,
+    scenario: FuncZone | TerritoryZone,
+    func_type: str,
+    territory: gpd.GeoDataFrame,
 ) -> dict[str, FeatureCollection]:
     """
     Function generates gen plan
@@ -79,6 +80,7 @@ def generate(
                 logger.warning(e)
                 continue
 
+
 @gen_planner_router.get("/gen_planner/territories_list", response_model=list[int])
 async def get_available_territories_profiles():
     """
@@ -87,6 +89,7 @@ async def get_available_territories_profiles():
 
     result = [i for i in scenario_ter_zones_map]
     return result
+
 
 @gen_planner_router.get("/gen_planner/zones_list", response_model=list[int])
 async def get_available_zones_profiles():
@@ -97,9 +100,10 @@ async def get_available_zones_profiles():
     result = [i for i in scenario_func_zones_map]
     return result
 
+
 @gen_planner_router.post("/run_ter_generation", response_model=GenPlannerResultSchema)
 async def run_ter_territory_zones_generation(
-        params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
+    params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_ter_zones_map.get(params.scenario)
@@ -116,9 +120,10 @@ async def run_ter_territory_zones_generation(
     result = GenPlannerResultSchema(**generation_result)
     return result
 
+
 @gen_planner_router.post("/run_func_generation", response_model=GenPlannerResultSchema)
 async def run_func_territory_zones_generation(
-        params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
+    params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_func_zones_map.get(params.scenario)

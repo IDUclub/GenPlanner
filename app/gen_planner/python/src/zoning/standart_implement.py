@@ -1,4 +1,4 @@
-from .models import TerritoryZone, FuncZone, GenPlan
+from .models import FuncZone, GenPlan, TerritoryZone
 
 minimum_block_area = 160000
 
@@ -134,5 +134,5 @@ gen_plan = GenPlan(
         business_func_zone: 0.088,
         agricalture_func_zone: 0.033,
         special_func_zone: 0.022,
-    }
+    },
 )

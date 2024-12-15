@@ -1,10 +1,9 @@
 import json
-from typing import Literal, Any, Optional
+from typing import Any, Literal, Optional
 
 import shapely
 import shapely.geometry as geom
 from pydantic import BaseModel, Field
-
 
 with open("app/common/example_geometry.json", "r") as et:
     example_territory = json.load(et)
@@ -34,9 +33,7 @@ class Geometry(BaseModel):
         return self._shapely_geom
 
     @classmethod
-    def from_shapely_geometry(
-        cls, geometry: geom.Polygon | geom.MultiPolygon | None
-    ) -> Optional["Geometry"]:
+    def from_shapely_geometry(cls, geometry: geom.Polygon | geom.MultiPolygon | None) -> Optional["Geometry"]:
         """
         Construct Geometry model from shapely geometry.
         """

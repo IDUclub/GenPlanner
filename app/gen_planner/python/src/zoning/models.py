@@ -3,11 +3,11 @@ class TerritoryZone:
     name: str
 
     def __init__(self, name, min_block_area: float = 160000):
-        self.min_block_area = min_block_area+10000
+        self.min_block_area = min_block_area + 10000
         self.name = name
 
     def __str__(self):
-        return f"Territory zone \"{self.name}\""
+        return f'Territory zone "{self.name}"'
 
     def __repr__(self):
         return self.__str__()
@@ -24,7 +24,7 @@ class FuncZone:
         self._calc_min_area()
 
     def __str__(self):
-        return f"Functional zone \"{self.name}\""
+        return f'Functional zone "{self.name}"'
 
     def __repr__(self):
         return self.__str__()
@@ -35,7 +35,8 @@ class FuncZone:
         return {zone: ratio / r_sum for zone, ratio in zones_ratio.items()}
 
     def _calc_min_area(self):
-        self.min_zone_area = max([zone.min_block_area/ratio for zone, ratio in self.zones_ratio.items()])
+        self.min_zone_area = max([zone.min_block_area / ratio for zone, ratio in self.zones_ratio.items()])
+
 
 class GenPlan:
     func_zone_ratio: dict[FuncZone, float]
@@ -53,5 +54,4 @@ class GenPlan:
         return {zone: ratio / r_sum for zone, ratio in func_zone_ratio.items()}
 
     def _calc_min_area(self):
-        self.min_zone_area = max([zone.min_zone_area/ratio for zone, ratio in self.func_zone_ratio.items()])
-
+        self.min_zone_area = max([zone.min_zone_area / ratio for zone, ratio in self.func_zone_ratio.items()])

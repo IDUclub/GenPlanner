@@ -6,54 +6,50 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from pyproj import CRS
-from shapely.geometry import Point, Polygon, MultiPolygon, LineString
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon
 from shapely.ops import polygonize
 
-
-from app.gen_planner.python.src.zoning import TerritoryZone, FuncZone, basic_func_zone, gen_plan, GenPlan
 from app.gen_planner.python.src.tasks import (
     poly2block_initial,
     poly2func2terr2block_initial,
     poly2terr2block_initial,
     polygon_splitter,
+    multipoly2func2terr2block_initial,
 )
-from app.gen_planner.python.src.utils import (
-    rotate_coords,
-    polygon_angle,
-    polygons_to_linestring,
-)
+from app.gen_planner.python.src.utils import polygon_angle, polygons_to_linestring, rotate_coords, rotate_poly
+from app.gen_planner.python.src.zoning import FuncZone, GenPlan, TerritoryZone, basic_func_zone, gen_plan
 
 
 class GenPlanner:
-    original_territory: Polygon
+    original_territory: gpd.GeoDataFrame
+    transformed_poly: Polygon | MultiPolygon
     local_crs: CRS
     angle_rad_to_rotate: float
     pivot_point: Point
+    source_multipolygon: bool = False
 
     def __init__(self, territory: gpd.GeoDataFrame, rotation: bool | float | int = True):
-
-        self.original_territory = self._gdf_to_poly(territory.copy())
-        self.pivot_point = self.original_territory.centroid
+        self.transformed_poly = self._gdf_to_poly(territory.copy())
+        self.pivot_point = self.transformed_poly.centroid
         if rotation:
             self.rotation = True
-            coord = self.original_territory.exterior.coords
+
             if rotation is not True:
                 self.angle_rad_to_rotate = np.deg2rad(rotation)
-                self.original_territory = Polygon(rotate_coords(coord, self.pivot_point, -self.angle_rad_to_rotate))
+                self.transformed_poly = rotate_poly(self.transformed_poly, self.pivot_point, -self.angle_rad_to_rotate)
             else:
-                self.angle_rad_to_rotate = polygon_angle(self.original_territory)
-                self.original_territory = Polygon(rotate_coords(coord, self.pivot_point, -self.angle_rad_to_rotate))
+                self.angle_rad_to_rotate = polygon_angle(self.transformed_poly)
+                self.transformed_poly = rotate_poly(self.transformed_poly, self.pivot_point, -self.angle_rad_to_rotate)
         else:
             self.rotation = False
 
-    def _gdf_to_poly(self, gdf: gpd.GeoDataFrame) -> Polygon:
+    def _gdf_to_poly(self, gdf: gpd.GeoDataFrame) -> Polygon | MultiPolygon:
+        self.original_territory = gdf.copy()
         self.local_crs = gdf.estimate_utm_crs()
-        poly = gdf.to_crs(self.local_crs).union_all()
-        if isinstance(poly, Polygon):
-            return poly
-        elif isinstance(poly, MultiPolygon):
-            # TODO deal with multipolygon
-            raise RuntimeError
+        poly = gdf.to_crs(self.local_crs).simplify(50).union_all()
+        if isinstance(poly, MultiPolygon):
+            self.source_multipolygon = True
+        return poly
 
     def _run(self, initial_func, *args, **kwargs):
         task_queue = multiprocessing.Queue()
@@ -97,25 +93,27 @@ class GenPlanner:
         if len(zones_ratio_dict) > 8:
             raise RuntimeError("Use poly2block, to split more than 8 parts")
         return self._run(
-            polygon_splitter, self.original_territory, zones_ratio_dict, roads_width, local_crs=self.local_crs
+            polygon_splitter, self.transformed_poly, zones_ratio_dict, roads_width, local_crs=self.local_crs
         )
 
     def poly2block(self, terr_zone: TerritoryZone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(poly2block_initial, self.original_territory, terr_zone, local_crs=self.local_crs)
+        return self._run(poly2block_initial, self.transformed_poly, terr_zone, local_crs=self.local_crs)
 
     def poly2terr(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(poly2terr2block_initial, self.original_territory, funczone, False, local_crs=self.local_crs)
+        return self._run(poly2terr2block_initial, self.transformed_poly, funczone, False, local_crs=self.local_crs)
 
     def poly2terr2block(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(poly2terr2block_initial, self.original_territory, funczone, True, local_crs=self.local_crs)
+        return self._run(poly2terr2block_initial, self.transformed_poly, funczone, True, local_crs=self.local_crs)
 
     def poly2func(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(
-            poly2func2terr2block_initial, self.original_territory, genplan, False, local_crs=self.local_crs
-        )
+        return self._run(poly2func2terr2block_initial, self.transformed_poly, genplan, False, local_crs=self.local_crs)
 
     def poly2func2terr2block(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-        return self._run(poly2func2terr2block_initial, self.original_territory, genplan, True, local_crs=self.local_crs)
+        if self.source_multipolygon:
+            return self._run(
+                multipoly2func2terr2block_initial, self.transformed_poly, genplan, True, local_crs=self.local_crs
+            )
+        return self._run(poly2func2terr2block_initial, self.transformed_poly, genplan, True, local_crs=self.local_crs)
 
 
 def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
