@@ -3,7 +3,6 @@ mod loss_topo;
 use del_candle::voronoi2::VoronoiInfo;
 use del_canvas_core::canvas_gif::Canvas;
 use pyo3::prelude::*;
-
 use std::panic;
 use std::backtrace::Backtrace;
 
@@ -30,19 +29,21 @@ fn optimize_space(
     });
     match result {
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())),
-        Err(_) => {
-            // Ловим панику и получаем стектрейс
-            let backtrace = Backtrace::force_capture();
-            let panic_message = format!(
-                "A panic occurred in the Rust code.\n\nBacktrace:\n{:?}",
-                backtrace
-            );
+        Ok(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            e.to_string(),
+        )),
+        Err(panic_info) => {
+            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic occurred".to_string()
+            };
             Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(panic_message))
         }
     }
 }
-
 
 #[pymodule]
 fn rust_optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -232,7 +233,7 @@ pub fn optimize(
     let mut final_edge2vtxv_wall = Vec::new();
 
 
-    let room2color = vec![15390321, 16185205, 15171426, 6527726];
+    let room2color = vec![15390321, 16185205, 15171426, 6527726,8900331,11259375,9498256];
     let gif_size = (500, 500);
     let mut canvas_gif = if create_gif {
         let num_room = room2area_trg.len();

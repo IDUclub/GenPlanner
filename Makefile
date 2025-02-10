@@ -31,4 +31,4 @@ update:
 	poetry update
 
 build_dev_rust:
-	cd app/gen_planner/rust && poetry run maturin develop
+	cd app/gen_planner/rust && poetry run maturin develop -r
