@@ -1,9 +1,11 @@
 import json
-from typing import Literal, Any, Optional
+from typing import Literal, Any, Optional, Self
 
 import shapely
 import shapely.geometry as geom
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.common.exceptions.http_exception import http_exception
 
 
 with open("app/common/example_geometry.json", "r") as et:
@@ -44,3 +46,67 @@ class Geometry(BaseModel):
         if geometry is None:
             return None
         return cls(**geom.mapping(geometry))
+
+
+class PolygonalGeometry(BaseModel):
+    """
+    Geometry representation for Polygon as dict
+    """
+
+    type: Literal["Polygon", "MultyPolygon"] = Field(examples=[example_territory["type"]])
+    coordinates: list[Any] = Field(
+        description="list[list[list[float]]] for Polygon",
+        examples=[example_territory["coordinates"]],
+    )
+
+    @model_validator(mode="after")
+    def validate_geom(self) -> Self:
+        """
+        Validating that the geometry dict is valid
+        """
+
+        counter = 0
+        check = self.coordinates.copy()
+        while type(check) is list:
+            check = check[0]
+            counter += 1
+        if counter not in (2, 3):
+            raise http_exception(
+                status_code=400,
+                msg="Input should be a valid Polygon or MultiPolygon",
+                _input=self.coordinates,
+                _detail={"nesting": counter},
+            )
+
+        return self
+
+    def as_dict(self) -> dict:
+        return self.__dict__
+
+
+class Feature(BaseModel):
+    type: Literal["Feature"] = Field(examples=["Feature"])
+    id: Optional[int] = Field(default=None, examples=[0])
+    geometry: PolygonalGeometry
+    properties: dict[str, Any] = Field(default=None, examples=[{"params": 1}])
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "geometry": self.geometry.as_dict(),
+            "properties": self.properties,
+        }
+
+class FeatureCollection(BaseModel):
+    type: Literal["FeatureCollection"] = Field(examples=["FeatureCollection"])
+    features: list[Feature] = Field(...)
+
+    def as_geo_dict(self):
+        """
+        Construct FeatureCollection dict
+        """
+
+        return {
+            "type": self.type,
+            "features": [feature.as_dict() for feature in self.features],
+        }

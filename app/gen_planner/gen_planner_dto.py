@@ -3,7 +3,7 @@ import json
 from typing import Literal, Optional, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.common.geometries import Geometry
+from app.common.geometries import FeatureCollection
 from app.common.exceptions.http_exception import http_exception
 
 with open("app/common/example_geometry.json") as et:
@@ -13,7 +13,7 @@ with open("app/common/example_geometry.json") as et:
 class GenPlannerDTO(BaseModel):
 
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
-    territory: Optional[Geometry] = Field(default=None, examples=[example_territory], description="The territory polygon")
+    territory: Optional[FeatureCollection] = Field(default=None, description="The territory geometry")
 
     @model_validator(mode="after")
     def validate_territory(self) -> Self:
