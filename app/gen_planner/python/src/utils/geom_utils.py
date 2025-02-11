@@ -2,6 +2,7 @@ import math
 
 import geopandas as gpd
 import numpy as np
+import shapely
 from scipy.stats._qmc import PoissonDisk
 from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
 
@@ -16,7 +17,7 @@ def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
     gdf = gdf.copy()
     multip = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs).explode(ignore_index=True)
     max_dist = np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0))
-    poly = multip.buffer(max_dist,resolution=4).union_all().buffer(-max_dist,resolution=4)
+    poly = multip.buffer(max_dist, resolution=4).union_all().buffer(-max_dist, resolution=4)
     if isinstance(poly, MultiPolygon):
         raise RuntimeError("Cant cast Multipolygon to Polygon")
     poly = Polygon(poly.exterior)
@@ -97,7 +98,7 @@ def generate_points(area_to_fill: Polygon, radius, seed=None):
     return points_in_polygon
 
 
-def polygons_to_linestring(geom: Polygon | MultiPolygon):
+def geometry_to_multilinestring(geom):
     def convert_polygon(polygon: Polygon):
         lines = []
         exterior = LineString(polygon.exterior.coords)
@@ -111,4 +112,8 @@ def polygons_to_linestring(geom: Polygon | MultiPolygon):
 
     if geom.geom_type == "Polygon":
         return MultiLineString(convert_polygon(geom))
-    return convert_multipolygon(geom)
+    if geom.geom_type == "MultiPolygon":
+        return convert_multipolygon(geom)
+    if geom.geom_type in ["MultiLineString", "LineString"]:
+        return geom
+    return LineString()

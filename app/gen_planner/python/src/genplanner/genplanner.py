@@ -14,9 +14,9 @@ from app.gen_planner.python.src.tasks import (
     poly2func2terr2block_initial,
     poly2terr2block_initial,
     polygon_splitter,
-    multipoly2func2terr2block_initial,
+    multipoly2terr2block_initial,
 )
-from app.gen_planner.python.src.utils import polygon_angle, polygons_to_linestring, rotate_coords, rotate_poly
+from app.gen_planner.python.src.utils import polygon_angle, geometry_to_multilinestring, rotate_coords, rotate_poly
 from app.gen_planner.python.src.zoning import FuncZone, GenPlan, TerritoryZone, basic_func_zone, gen_plan
 
 
@@ -46,9 +46,12 @@ class GenPlanner:
     def _gdf_to_poly(self, gdf: gpd.GeoDataFrame) -> Polygon | MultiPolygon:
         self.original_territory = gdf.copy()
         self.local_crs = gdf.estimate_utm_crs()
-        poly = gdf.to_crs(self.local_crs).simplify(50).union_all()
-        if isinstance(poly, MultiPolygon):
+        if len(gdf) == 1:
+            poly = gdf.to_crs(self.local_crs).union_all()
+        else:
             self.source_multipolygon = True
+            gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
+            poly = MultiPolygon(gdf.to_crs(self.local_crs).geometry.explode().to_list())
         return poly
 
     def _run(self, initial_func, *args, **kwargs):
@@ -69,7 +72,7 @@ class GenPlanner:
 
         all_data = pd.concat([res, gpd.GeoDataFrame(geometry=[roads_poly], crs=self.local_crs)])["geometry"]
         polygons = gpd.GeoDataFrame(
-            geometry=list(polygonize(all_data.apply(polygons_to_linestring).union_all())), crs=self.local_crs
+            geometry=list(polygonize(all_data.apply(geometry_to_multilinestring).union_all())), crs=self.local_crs
         )
         polygons_points = polygons.copy()
         polygons_points.geometry = polygons_points.representative_point()
@@ -97,22 +100,32 @@ class GenPlanner:
         )
 
     def poly2block(self, terr_zone: TerritoryZone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        if self.source_multipolygon:
+            raise NotImplementedError("Multipolygon source is not supported yet")
         return self._run(poly2block_initial, self.transformed_poly, terr_zone, local_crs=self.local_crs)
 
     def poly2terr(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        if self.source_multipolygon:
+            return self._run(
+                multipoly2terr2block_initial, self.transformed_poly, funczone, True, local_crs=self.local_crs
+            )
         return self._run(poly2terr2block_initial, self.transformed_poly, funczone, False, local_crs=self.local_crs)
 
     def poly2terr2block(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        if self.source_multipolygon:
+            return self._run(
+                multipoly2terr2block_initial, self.transformed_poly, funczone, True, local_crs=self.local_crs
+            )
         return self._run(poly2terr2block_initial, self.transformed_poly, funczone, True, local_crs=self.local_crs)
 
     def poly2func(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+        if self.source_multipolygon:
+            raise NotImplementedError("Multipolygon source is not supported yet")
         return self._run(poly2func2terr2block_initial, self.transformed_poly, genplan, False, local_crs=self.local_crs)
 
     def poly2func2terr2block(self, genplan: GenPlan = gen_plan) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         if self.source_multipolygon:
-            return self._run(
-                multipoly2func2terr2block_initial, self.transformed_poly, genplan, True, local_crs=self.local_crs
-            )
+            raise NotImplementedError("Multipolygon source is not supported yet")
         return self._run(poly2func2terr2block_initial, self.transformed_poly, genplan, True, local_crs=self.local_crs)
 
 

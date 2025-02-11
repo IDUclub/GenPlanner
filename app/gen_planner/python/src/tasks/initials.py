@@ -37,12 +37,12 @@ def poly2func2terr2block_initial(task, **kwargs):
     return tasks, True, roads
 
 
-def multipoly2func2terr2block_initial(task, **kwargs):
-    multiterritory, genplan, split_further = task
-    areas_dict = genplan.func_zone_ratio
+def multipoly2terr2block_initial(task, **kwargs):
+    multiterritory, funczone, split_further = task
+    areas_dict = funczone.zones_ratio
     local_crs = kwargs.get("local_crs")
 
-    territory = elastic_wrap(gpd.GeoDataFrame(geometry=[multiterritory],crs=local_crs)).simplify(400)
+    territory = elastic_wrap(gpd.GeoDataFrame(geometry=[multiterritory],crs=local_crs))
     # return gpd.GeoDataFrame(geometry=[territory],crs=local_crs), False, gpd.GeoDataFrame(data =[1],geometry=[LineString(territory.exterior)],columns=['roads_width'],crs=local_crs)
     zones, roads = _split_polygon(
         polygon=territory,
