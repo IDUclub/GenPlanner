@@ -107,7 +107,7 @@ class GenPlanner:
     def poly2terr(self, funczone: FuncZone = basic_func_zone) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         if self.source_multipolygon:
             return self._run(
-                multipoly2terr2block_initial, self.transformed_poly, funczone, True, local_crs=self.local_crs
+                multipoly2terr2block_initial, self.transformed_poly, funczone, False, local_crs=self.local_crs
             )
         return self._run(poly2terr2block_initial, self.transformed_poly, funczone, False, local_crs=self.local_crs)
 

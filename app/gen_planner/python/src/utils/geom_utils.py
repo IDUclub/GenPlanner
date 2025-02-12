@@ -15,11 +15,13 @@ def rotate_poly(poly: Polygon | MultiPolygon, pivot_point, angle_rad) -> Polygon
 
 def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
     gdf = gdf.copy()
-    multip = gpd.GeoDataFrame(geometry=gdf.geometry, crs=gdf.crs).explode(ignore_index=True)
-    max_dist = np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0))
+    multip = gpd.GeoDataFrame(geometry=[gdf.union_all()], crs=gdf.crs).explode(ignore_index=True)
+    max_dist = (
+        np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0)) + 0.1
+    )
     poly = multip.buffer(max_dist, resolution=4).union_all().buffer(-max_dist, resolution=4)
     if isinstance(poly, MultiPolygon):
-        raise RuntimeError("Cant cast Multipolygon to Polygon")
+        return elastic_wrap(gpd.GeoDataFrame(geometry=[poly], crs=gdf.crs))
     poly = Polygon(poly.exterior)
     return poly
 
