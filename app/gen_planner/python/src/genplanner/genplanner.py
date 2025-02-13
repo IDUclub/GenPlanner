@@ -151,11 +151,16 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
                         task_queue.put((func, new_task, kwargs))
                 else:
                     splitted.append(result)
-                roads_all.append(roads)
+                if not roads.empty:
+                    roads_all.append(roads)
             time.sleep(0.01)
             if not future_to_task and task_queue.empty():
                 break
+    if len(roads_all) > 0:
+        roads_to_return = gpd.GeoDataFrame()
+    else:
+        roads_to_return = gpd.GeoDataFrame(pd.concat(roads_all, ignore_index=True), crs=local_crs, geometry="geometry")
     return (
         gpd.GeoDataFrame(pd.concat(splitted, ignore_index=True), crs=local_crs, geometry="geometry"),
-        gpd.GeoDataFrame(pd.concat(roads_all, ignore_index=True), crs=local_crs, geometry="geometry"),
+        roads_to_return,
     )
