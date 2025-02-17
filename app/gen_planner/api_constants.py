@@ -21,6 +21,3 @@ scenario_ter_zones_map = {
     5: terr_zones.agriculture_terr,
     3: terr_zones.special_terr
 }
-
-print([i for i in scenario_func_zones_map])
-print([i for i in scenario_ter_zones_map])
