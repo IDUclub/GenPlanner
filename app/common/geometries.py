@@ -3,7 +3,7 @@ from typing import Literal, Any, Optional, Self
 
 import shapely
 import shapely.geometry as geom
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from app.common.exceptions.http_exception import http_exception
 

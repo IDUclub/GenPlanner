@@ -59,10 +59,16 @@ class GenPlanner:
         task_queue = multiprocessing.Queue()
         task_queue.put((initial_func, args, kwargs))
         res, roads = parallel_split_queue(task_queue, self.local_crs)
+
         if self.rotation:
             res.geometry = res.geometry.apply(
                 lambda x: Polygon(rotate_coords(x.exterior.coords, self.pivot_point, self.angle_rad_to_rotate))
             )
+
+        if roads.empty:
+            return res, roads
+
+        if self.rotation:
             roads.geometry = roads.geometry.apply(
                 lambda x: LineString(rotate_coords(x.coords, self.pivot_point, self.angle_rad_to_rotate))
             )
@@ -144,7 +150,14 @@ def parallel_split_queue(task_queue: multiprocessing.Queue, local_crs) -> (gpd.G
             time.sleep(0.01)
             if not future_to_task and task_queue.empty():
                 break
+    roads_all = [roads_df for roads_df in roads_all if not roads_df.empty]
+    if len(roads_all) > 0:
+        roads_to_return = gpd.GeoDataFrame(pd.concat(roads_all, ignore_index=True), crs=local_crs, geometry="geometry")
+    else:
+        roads_to_return = gpd.GeoDataFrame()
+
     return (
         gpd.GeoDataFrame(pd.concat(splitted, ignore_index=True), crs=local_crs, geometry="geometry"),
-        gpd.GeoDataFrame(pd.concat(roads_all, ignore_index=True), crs=local_crs, geometry="geometry"),
+        roads_to_return,
     )
+
