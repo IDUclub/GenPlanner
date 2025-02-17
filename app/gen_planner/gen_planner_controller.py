@@ -1,7 +1,8 @@
 import asyncio
 import json
-from typing import Annotated
+from typing import Annotated, Literal
 
+import pandas as pd
 from loguru import logger
 
 from app.gen_planner.python.src.genplanner import GenPlanner
@@ -34,49 +35,41 @@ gen_planner_router = APIRouter(tags=["gen_planner"])
 
 def generate(
         scenario: FuncZone | TerritoryZone,
-        func_type: str,
+        func_type: Literal["ter", "zone"],
         territory: gpd.GeoDataFrame,
-) -> dict[str, FeatureCollection]:
+) -> tuple[gpd.GeoDataFrame]:
     """
     Function generates gen plan
     :param scenario: scenario to generate from
-    :param func_type:  func type to generate by
+    :param func_type:  func type to generate by. Can be ter or zone
     :param territory: territory gdf to generate on
-    :return: dict with roads and zones
+    :return: tuple[gpd.GeoDataFrame] with zones and roads
     """
 
     gen_planner = GenPlanner(territory)
     if func_type == "zone":
         for i in range(15):
             try:
-                zones, roads = gen_planner.district2zone2block(scenario)
+                zones, roads = gen_planner.poly2terr2block(scenario)
                 zones.to_crs(4326, inplace=True)
+                if roads.empty:
+                    return zones, gpd.GeoDataFrame()
                 roads.to_crs(4326, inplace=True)
-                zones_json = json.loads(zones.to_json())
-                roads_json = json.loads(roads.to_json())
-                result = {
-                    "zones": zones_json,
-                    "roads": roads_json,
-                }
-                return result
+                return zones, roads
             except Exception as e:
-                logger.warning(e)
+                logger.warning(e.__str__())
                 continue
     elif func_type == "ter":
         for i in range(20):
             try:
-                zones, roads = gen_planner.zone2block(scenario)
+                zones, roads = gen_planner.poly2block(scenario)
                 zones.to_crs(4326, inplace=True)
+                if roads.empty:
+                    return zones, gpd.GeoDataFrame()
                 roads.to_crs(4326, inplace=True)
-                zones_json = json.loads(zones.to_json())
-                roads_json = json.loads(roads.to_json())
-                result = {
-                    "zones": zones_json,
-                    "roads": roads_json,
-                }
-                return result
+                return zones, roads
             except Exception as e:
-                logger.warning(e)
+                logger.warning(e.__str__())
                 continue
 
 @gen_planner_router.get("/gen_planner/territories_list", response_model=list[int])
@@ -104,16 +97,26 @@ async def run_ter_territory_zones_generation(
 
     scenario = scenario_ter_zones_map.get(params.scenario)
     if params.territory:
-        territory = gpd.GeoDataFrame(geometry=[shape(params.territory.__dict__)], crs=4326)
+        territory = gpd.GeoDataFrame.from_features(params.territory.as_geo_dict(), crs=4326)
     else:
         territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
-    generation_result = await asyncio.to_thread(
-        generate,
-        scenario=scenario,
-        func_type="ter",
-        territory=territory,
-    )
-    result = GenPlannerResultSchema(**generation_result)
+    territory = territory.explode()
+    result_zones, result_roads = [], []
+    for geometry in territory.geometry:
+        current_geometry = gpd.GeoDataFrame(geometry=[geometry], crs=4326)
+        zones, roads = await asyncio.to_thread(
+            generate,
+            scenario=scenario,
+            func_type="ter",
+            territory=current_geometry,
+        )
+        result_zones.append(zones)
+        result_roads.append(roads)
+    result_dict = {
+        "zones": json.loads(pd.concat(result_zones).to_json()),
+        "roads": json.loads(pd.concat(result_roads).to_json())
+    }
+    result = GenPlannerResultSchema(**result_dict)
     return result
 
 @gen_planner_router.post("/run_func_generation", response_model=GenPlannerResultSchema)
@@ -123,14 +126,24 @@ async def run_func_territory_zones_generation(
 
     scenario = scenario_func_zones_map.get(params.scenario)
     if params.territory:
-        territory = gpd.GeoDataFrame(geometry=[shape(params.territory.__dict__)], crs=4326)
+        territory = gpd.GeoDataFrame.from_features(params.territory.as_geo_dict(), crs=4326)
     else:
         territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
-    generation_result = await asyncio.to_thread(
-        generate,
-        scenario=scenario,
-        func_type="zone",
-        territory=territory,
-    )
-    result = GenPlannerResultSchema(**generation_result)
+    territory = territory.explode()
+    result_zones, result_roads = [], []
+    for geometry in territory.geometry:
+        current_geometry = gpd.GeoDataFrame(geometry=[geometry], crs=4326)
+        zones, roads = await asyncio.to_thread(
+            generate,
+            scenario=scenario,
+            func_type="zone",
+            territory=current_geometry,
+        )
+        result_zones.append(zones)
+        result_roads.append(roads)
+    result_dict = {
+        "zones": json.loads(pd.concat(result_zones).to_json()),
+        "roads": json.loads(pd.concat(result_roads).to_json())
+    }
+    result = GenPlannerResultSchema(**result_dict)
     return result
