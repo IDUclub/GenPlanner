@@ -46,6 +46,9 @@ RUN poetry install --only main
 COPY . /app
 
 # Install the latest stable version of Rust
+RUN rustup toolchain uninstall stable
+RUN rustup toolchain install stable
+RUN rustup update
 RUN rustup install stable
 RUN rustup default stable
 
