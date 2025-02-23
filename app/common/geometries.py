@@ -53,7 +53,7 @@ class PolygonalGeometry(BaseModel):
     Geometry representation for Polygon as dict
     """
 
-    type: Literal["Polygon", "MultyPolygon"] = Field(examples=[example_territory["type"]])
+    type: Literal["Polygon", "MultiPolygon"] = Field(examples=[example_territory["type"]])
     coordinates: list[Any] = Field(
         description="list[list[list[float]]] for Polygon",
         examples=[example_territory["coordinates"]],
