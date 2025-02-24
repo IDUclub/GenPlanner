@@ -1,7 +1,7 @@
 import json
 
 from typing import Literal, Optional, Self
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, validator
 
 from app.common.geometries import FeatureCollection
 from app.common.exceptions.http_exception import http_exception
@@ -44,13 +44,35 @@ class GenPlannerDTO(BaseModel):
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):
 
-    scenario: Literal[
-        8, 1, 4, 7, 2, 6, 5, 3
-    ] | int = Field(..., description="Scenario func zone type")
+    profile_scenario: int = Field(..., description="Scenario func zone type")
+
+    @field_validator("profile_scenario", mode="before")
+    @classmethod
+    def validate_scenario(cls, value: int) -> int:
+
+        if 0 < value < 9:
+            return int(value)
+        raise http_exception(
+            400,
+            msg="Scenario should be a valid num",
+            _input={"scenario": value},
+            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7, 8]}
+        )
 
 
 class GenPlannerTerZonesDTO(GenPlannerDTO):
 
-    scenario: Literal[
-        1, 4, 7, 2, 6, 5, 3
-    ] | int = Field(..., description="Scenario ter zone type")
+    profile_scenario: int = Field(..., description="Scenario ter zone type")
+
+    @field_validator("profile_scenario", mode="before")
+    @staticmethod
+    def validate_scenario(value: int):
+
+        if 0 < value < 8:
+            return value
+        raise http_exception(
+            400,
+            msg="Scenario should be a valid num",
+            _input={"scenario": value},
+            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7]}
+        )

@@ -70,7 +70,7 @@ class PolygonalGeometry(BaseModel):
         while type(check) is list:
             check = check[0]
             counter += 1
-        if counter not in (2, 3):
+        if counter not in (3, 4):
             raise http_exception(
                 status_code=400,
                 msg="Input should be a valid Polygon or MultiPolygon",

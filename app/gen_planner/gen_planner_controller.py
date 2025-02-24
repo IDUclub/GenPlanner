@@ -95,7 +95,7 @@ async def run_ter_territory_zones_generation(
         params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
 ) -> GenPlannerResultSchema:
 
-    scenario = scenario_ter_zones_map.get(params.scenario)
+    scenario = scenario_ter_zones_map.get(params.profile_scenario)
     if params.territory:
         territory = gpd.GeoDataFrame.from_features(params.territory.as_geo_dict(), crs=4326)
     else:
@@ -124,7 +124,7 @@ async def run_func_territory_zones_generation(
         params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
 ) -> GenPlannerResultSchema:
 
-    scenario = scenario_func_zones_map.get(params.scenario)
+    scenario = scenario_func_zones_map.get(params.profile_scenario)
     if params.territory:
         territory = gpd.GeoDataFrame.from_features(params.territory.as_geo_dict(), crs=4326)
     else:
