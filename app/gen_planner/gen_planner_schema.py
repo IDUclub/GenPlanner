@@ -1,15 +1,15 @@
 # from typing import Optional
 
 from pydantic import BaseModel
-from geojson_pydantic import FeatureCollection
+from .gen_planner_dto import FeatureCollection
 
 
 class GenPlannerStartSchema(BaseModel):
     task_id: str
 
 class GenPlannerResultSchema(BaseModel):
-    zones: FeatureCollection
-    roads: FeatureCollection
+    zones: FeatureCollection | dict
+    roads: FeatureCollection | dict
 
 # class GenPlannerSchema(BaseModel):
 #     status: str
