@@ -7,4 +7,5 @@ from .geom_utils import (
     geometry_to_multilinestring,
     elastic_wrap,
     rotate_poly,
+    territory_splitter
 )

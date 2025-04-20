@@ -1,10 +1,8 @@
 mod loss_topo;
-
 use del_candle::voronoi2::VoronoiInfo;
 use del_canvas_core::canvas_gif::Canvas;
 use pyo3::prelude::*;
 use std::panic;
-use std::backtrace::Backtrace;
 
 #[pyfunction]
 fn optimize_space(
@@ -232,8 +230,18 @@ pub fn optimize(
     let mut final_idx2vtxv = Vec::new();
     let mut final_edge2vtxv_wall = Vec::new();
 
+    let fixed_flags = site2xy2flag.iter().filter(|&&x| x != 0.0).count();
 
-    let room2color = vec![15390321, 16185205, 15171426, 6527726,8900331,11259375,9498256];
+    let room2color = vec![
+        0xAEC6CF,  // Пастельно-голубой
+        0xC7F0BD,  // Пастельно-зеленый
+        0xC9A0DC,  // Пастельно-фиолетовый
+        0xFF9AA2,  // Пастельно-красный
+        0xB5EAD7,  // Пастельно-бирюзовый
+        0xFFFACD,  // Пастельно-желтый (более светлый)
+        0xFFB347,  // Пастельно-оранжевый (немного ярче для различимости)
+        0xF8B7D8   // Пастельно-розовый (вместо пурпурного)
+    ];
     let gif_size = (500, 500);
     let mut canvas_gif = if create_gif {
         let num_room = room2area_trg.len();
@@ -286,22 +294,43 @@ pub fn optimize(
             .unwrap()
     };
     let adamw_params = candle_nn::ParamsAdamW {
-        lr: 0.05,
+        lr: 0.2,
         ..Default::default()
     };
-    use candle_nn::Optimizer;
-    use std::time::Instant;
 
+    use candle_nn::Optimizer;
     let mut optimizer = candle_nn::AdamW::new(vec![site2xy.clone()], adamw_params)?;
-    let n_iter = 250;
+    let n_sites = site2room.len();
+    let base_iter = 250;
+    let max_iter = 600;
+    let mut n_iter = base_iter + ((n_sites.saturating_sub(10) * (max_iter - base_iter)) / 50);
+
+    if fixed_flags > 0 {
+        n_iter = (n_iter as f32 * 1.1).round() as usize;
+    }
+
+    let warmup_iters = n_iter / 20;
+    let max_lr = 0.08;
+    let min_lr = 0.005;
+    let decay_start = n_iter / 6;
+
     for _iter in 0..n_iter {
-        if _iter == 150 {
-            let adamw_params = candle_nn::ParamsAdamW {
-                lr: 0.005,
-                ..Default::default()
-            };
-            optimizer.set_params(adamw_params);
-        }
+
+        let current_lr = if _iter < warmup_iters {
+            0.02 + (max_lr - 0.02) * (_iter as f32 / warmup_iters as f32)
+        } else if _iter < decay_start {
+            max_lr
+        } else {
+            let decay_progress = (_iter - decay_start) as f32 / (n_iter - decay_start) as f32;
+            min_lr + 0.5 * (max_lr - min_lr) * (1.0 + f32::cos(std::f32::consts::PI * decay_progress))
+        };
+
+        optimizer.set_params(candle_nn::ParamsAdamW {
+            lr: current_lr as f64,
+            beta2: 0.95,
+            ..Default::default()
+        });
+
         let (vtxv2xy, voronoi_info)
             = del_candle::voronoi2::voronoi(&vtxl2xy, &site2xy, |i_site| {
             site2room[i_site] != usize::MAX
@@ -348,15 +377,19 @@ pub fn optimize(
         };
         let loss_topo = loss_topo::unidirectional(
             &site2xy,
+            // &site2xy_ini,
+            // &site2xy2flag,
             &site2room,
             room2area_trg.dims2()?.0,
             &voronoi_info,
             &room_connections,
         )?;
         // println!("  loss topo: {}", loss_topo.to_vec0::<f32>()?);
-        //let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
-        //let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
-        let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sqr()?.sum_all()?;
+        // let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
+        // let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
+
+        let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sqr()?.sqr()?.sum_all()?;
+
         let loss_lloyd = del_candle::voronoi2::loss_lloyd(
             &voronoi_info.site2idx, &voronoi_info.idx2vtxv,
             &site2xy, &vtxv2xy)?;
@@ -369,27 +402,42 @@ pub fn optimize(
         else {
         };
          */
-        let loss_each_area = loss_each_area.affine(15.0, 0.0)?.clone();
-        let loss_total_area = loss_total_area.affine(10.0, 0.0)?.clone();
-        let loss_walllen = loss_walllen.affine(0.02, 0.0)?;
-        let loss_topo = loss_topo.affine(1., 0.0)?;
-        let loss_fix = loss_fix.affine(100., 0.0)?;
-        let loss_lloyd = loss_lloyd.affine(0.2, 0.0)?;
+        let topo_weight = if _iter < decay_start {
+            10.0 + (_iter as f32 / decay_start as f32) * 150.0
+        } else {
+            150.0
+        };
+
+        // TODO Кароче надо loss fix накручивать на все точки одного полигона (как делать? - хз)
+
+        let loss_each_area = loss_each_area.affine(50000.0, 0.0)?.clone();
+        let loss_total_area = loss_total_area.affine(10000.0, 0.0)?.clone();
+        let loss_walllen = loss_walllen.affine(20.0, 0.0)?;
+        let loss_topo = loss_topo.affine(topo_weight as f64, 0.0)?;
+        let loss_fix = loss_fix.affine(10000000., 0.0)?;
+        let loss_lloyd = loss_lloyd.affine(0.1, 0.0)?;
         // dbg!(loss_fix.flatten_all()?.to_vec1::<f32>());
-        /*
+
+        // let loss_fix_topo = loss_fix.mul(&loss_topo)?.affine(0.01, 0.)?;
+
+
         {
-            let mut file = std::fs::OpenOptions::new().write(true).append(true).open("target/conv.csv")?;
+            use std::io::Write;
+            let file = std::fs::OpenOptions::new().write(true).append(true).create(true).open("conv.csv")?;
             let mut writer = std::io::BufWriter::new(&file);
-            writeln!(&mut writer, "{}, {},{},{},{},{}",
+            writeln!(&mut writer, "{}, {},{},{},{},{},{},{}",
                      _iter,
-                     (loss_each_area.clone() + loss_total_area.clone())?.to_vec0::<f32>()?,
+                     loss_each_area.clone().to_vec0::<f32>()?,
+                     loss_total_area.clone().to_vec0::<f32>()?,
                      loss_walllen.clone().to_vec0::<f32>()?,
                      loss_topo.clone().to_vec0::<f32>()?,
                      loss_fix.clone().to_vec0::<f32>()?,
                      loss_lloyd.clone().to_vec0::<f32>()?,
-            );
+                     // loss_fix_topo.clone().to_vec0::<f32>()?,
+                     current_lr,
+            ).expect("TODO: panic message");
         }
-         */
+
         let loss = (
             loss_each_area
                 + loss_total_area
@@ -397,7 +445,9 @@ pub fn optimize(
                 + loss_topo
                 + loss_fix
                 + loss_lloyd
+            // + loss_fix_topo
         )?;
+
         // println!("  loss: {}", loss.to_vec0::<f32>()?);
         optimizer.backward_step(&loss)?;
         // ----------------

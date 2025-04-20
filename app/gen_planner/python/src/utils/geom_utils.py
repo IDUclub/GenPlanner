@@ -2,9 +2,10 @@ import math
 
 import geopandas as gpd
 import numpy as np
-import shapely
+import pandas as pd
 from scipy.stats._qmc import PoissonDisk
 from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
+from shapely.ops import polygonize, unary_union
 
 
 def rotate_poly(poly: Polygon | MultiPolygon, pivot_point, angle_rad) -> Polygon | MultiPolygon:
@@ -19,6 +20,8 @@ def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
     max_dist = (
         np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0)) + 0.1
     )
+    if pd.isna(max_dist):
+        max_dist = 1
     poly = multip.buffer(max_dist, resolution=4).union_all().buffer(-max_dist, resolution=4)
     if isinstance(poly, MultiPolygon):
         return elastic_wrap(gpd.GeoDataFrame(geometry=[poly], crs=gdf.crs))
@@ -44,6 +47,8 @@ def rotate_coords(coords: list, pivot: Point, angle_rad: float) -> list[tuple[fl
 
 def polygon_angle(rect: Polygon) -> float:
     rect = rect.minimum_rotated_rectangle
+    if not isinstance(rect, Polygon):
+        return 0
     coords = list(rect.exterior.coords)[:-1]
     sides = [(coords[0], coords[1]), (coords[1], coords[2])]
 
@@ -83,20 +88,14 @@ def generate_points(area_to_fill: Polygon, radius, seed=None):
 
     bbox = area_to_fill.envelope
     min_x, min_y, max_x, max_y = bbox.bounds
-
     width = max_x - min_x
     height = max_y - min_y
 
     norm_radius = radius / max(width, height)
 
     engine = PoissonDisk(d=2, radius=norm_radius, seed=seed)
-    points = engine.random(int(bbox.area // (math.pi * radius**2)) * 10)
-
-    points[:, 0] = points[:, 0] * width + min_x
-    points[:, 1] = points[:, 1] * height + min_y
-
+    points = engine.random(int((1 // (math.pi * radius**2)) * bbox.area * 10))
     points_in_polygon = np.array([point for point in points])
-
     return points_in_polygon
 
 
@@ -119,3 +118,32 @@ def geometry_to_multilinestring(geom):
     if geom.geom_type in ["MultiLineString", "LineString"]:
         return geom
     return LineString()
+
+
+def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    original_crs = gdf_to_split.crs
+    local_crs = gdf_to_split.estimate_utm_crs()
+    gdf_to_split = gdf_to_split.to_crs(local_crs)
+    splitters = splitters.to_crs(local_crs)
+    lines_orig = gdf_to_split.geometry.apply(geometry_to_multilinestring).to_list()
+    lines_splitters = splitters.geometry.apply(geometry_to_multilinestring).to_list()
+
+    polygons = (
+        gpd.GeoDataFrame(geometry=list(polygonize(unary_union(lines_orig + lines_splitters))), crs=local_crs)
+        .clip(gdf_to_split.to_crs(local_crs), keep_geom_type=True)
+        .explode()
+    )
+
+    polygons_points = polygons.copy()
+    polygons_points.geometry = polygons.representative_point()
+    joined_ind = polygons_points.sjoin(splitters, how="inner", predicate="within").index.tolist()
+    polygons["is_splitter"] = polygons.index.isin(joined_ind)
+    polygons.geometry = polygons.apply(
+        lambda x: Polygon(x.geometry.exterior) if not x["is_splitter"] else x.geometry, axis=1
+    )
+    non_splitters = polygons[~polygons["is_splitter"]]
+    contains = non_splitters.sjoin(non_splitters, predicate="contains")
+    to_kick = contains[~(contains.index == contains["index_right"])]["index_right"].to_list()
+    polygons.drop(index=to_kick, inplace=True)
+    polygons = polygons[polygons.area >= 0.1]
+    return polygons.to_crs(original_crs)

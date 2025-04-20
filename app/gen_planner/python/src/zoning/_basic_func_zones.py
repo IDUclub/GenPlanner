@@ -1,4 +1,4 @@
-from .standart_implement import (
+from .func_zones import (
     agricalture_func_zone,
     business_func_zone,
     industrial_func_zone,

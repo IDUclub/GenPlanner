@@ -11,12 +11,12 @@ class Config:
         3: 0.23,
         4: 0.22,
         5: 0.2,
-        6: 0.17,
-        7: 0.13,
-        8: 0.1,
+        6: 0.18,
+        7: 0.15,
+        8: 0.12,
     }
 
-    roads_width_def = {"high speed highway": 60, "regulated highway": 30, "local road": 10}
+    roads_width_def = {"high speed highway": 30, "regulated highway": 20, "local road": 5}
 
     def __init__(
         self,

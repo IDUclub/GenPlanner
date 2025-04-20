@@ -66,7 +66,7 @@ def generate(
     elif func_type == "ter":
         for i in range(20):
             try:
-                zones, roads = gen_planner.poly2block(scenario)
+                zones, roads = gen_planner.features2blocks(scenario)
                 zones.to_crs(4326, inplace=True)
                 roads.to_crs(4326, inplace=True)
                 zones_json = json.loads(zones.to_json())

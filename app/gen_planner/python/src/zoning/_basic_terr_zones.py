@@ -1,4 +1,4 @@
-from .standart_implement import (
+from .terr_zones import (
     agriculture_terr,
     business_terr,
     industrial_terr,
