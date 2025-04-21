@@ -9,7 +9,11 @@ scenario_func_zones_map = {
     2: func_zones.recreation_func_zone,
     6: func_zones.transport_func_zone,
     5: func_zones.agricalture_func_zone,
-    3: func_zones.special_func_zone
+    3: func_zones.special_func_zone,
+    10: func_zones.residential_func_zone,
+    11: func_zones.residential_func_zone,
+    12: func_zones.residential_func_zone,
+    13: func_zones.residential_func_zone,
 }
 
 scenario_ter_zones_map = {
@@ -19,5 +23,9 @@ scenario_ter_zones_map = {
     2: terr_zones.recreation_terr,
     6: terr_zones.transport_terr,
     5: terr_zones.agriculture_terr,
-    3: terr_zones.special_terr
+    3: terr_zones.special_terr,
+    10: terr_zones.residential_terr,
+    11: terr_zones.residential_terr,
+    12: terr_zones.residential_terr,
+    13: terr_zones.residential_terr,
 }
