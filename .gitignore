@@ -10,4 +10,5 @@ __pycache__
 draft.ipynb
 idea
 target
-.env.development
+*.env.*
+*.log

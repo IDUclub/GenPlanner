@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator, validat
 from app.common.geometries import FeatureCollection
 from app.common.exceptions.http_exception import http_exception
 
+
 with open("app/common/example_geometry.json") as et:
     example_territory =json.load(et)
 
@@ -23,7 +24,7 @@ class GenPlannerDTO(BaseModel):
                 status_code=400,
                 msg="Can pass either geojson territory or project ID (strict or)",
                 _input={
-                    "territory": self.territory.__dict__,
+                    "territory": self.territory.as_geo_dict(),
                     "project_id": self.project_id,
                 },
                 _detail=None
@@ -50,13 +51,13 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
     @classmethod
     def validate_scenario(cls, value: int) -> int:
 
-        if 0 < value < 9:
+        if value in [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]:
             return int(value)
         raise http_exception(
             400,
             msg="Scenario should be a valid num",
             _input={"scenario": value},
-            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7, 8]}
+            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]}
         )
 
 
@@ -68,11 +69,11 @@ class GenPlannerTerZonesDTO(GenPlannerDTO):
     @staticmethod
     def validate_scenario(value: int):
 
-        if 0 < value < 8:
+        if value in [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13]:
             return value
         raise http_exception(
             400,
             msg="Scenario should be a valid num",
             _input={"scenario": value},
-            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7]}
+            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13]}
         )
