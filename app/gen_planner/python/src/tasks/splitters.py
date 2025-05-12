@@ -3,28 +3,28 @@ import os
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from loguru import logger
 from pyproj import CRS
 from rust_optimizer import optimize_space
 from shapely import Point
 from shapely.geometry import LineString, MultiPolygon, Polygon
-from loguru import logger
+
 from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.utils import (
     denormalize_coords,
     generate_points,
     normalize_coords,
-    rotate_coords,
     polygon_angle,
+    rotate_coords,
 )
-
 
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()
 
 
-def gdf_splitter(task):
+def gdf_splitter(task, **kwargs):
     gdf, areas_dict, roads_width, fixed_zones = task
-
+    print(kwargs.get("dev_mod"))
     n_areas = len(areas_dict)
     generated_zones = []
     generated_roads = []
@@ -52,6 +52,7 @@ def gdf_splitter(task):
             point_radius=poisson_n_radius.get(n_areas, 0.1),
             local_crs=local_crs,
             fixed_zone_points=fixed_zones_in_poly,
+            dev=kwargs.get("dev_mod"),
         )
 
         if not zones.empty:
@@ -135,6 +136,7 @@ def _split_polygon(
     point_radius: float = 0.1,
     zone_connections: list = None,
     fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
+    dev=False,
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
 
     def create_polygons(site2idx, site2room, idx2vtxv, vtxv2xy):
@@ -186,7 +188,7 @@ def _split_polygon(
             full_area = normalized_polygon.area
             areas = areas_init.copy()
 
-            areas["ratio"] = areas["ratio"] / areas["ratio"].sum()
+            areas["ratio"] = areas["ratio"] / (areas["ratio"].sum())
             areas["area"] = areas["ratio"] * full_area
 
             areas["ratio_sqrt"] = np.sqrt(areas["ratio"]) / (sum(np.sqrt(areas["ratio"])))
@@ -211,9 +213,7 @@ def _split_polygon(
                 for sublist in normalized_polygon.exterior.segmentize(0.1).normalize().coords[::-1]
                 for item in sublist
             ]
-            # # Точки (координата х, координата у, индекс зоны, как в site2room!)
-            # fixed_points = [(0.4, 0.6, 2), (0.8, 0.1, 1)]
-            #
+
             site2xy = poisson_points.flatten().round(8).tolist()
             site2xy2flag = [0.0 for _ in range(len(site2room) * 2)]
             site2room = site2room.tolist()
@@ -230,7 +230,7 @@ def _split_polygon(
                 site2xy2flag=site2xy2flag,
                 room2area_trg=areas["area"].sort_index().round(8).tolist(),
                 room_connections=zone_connections,
-                create_gif=True,
+                dev=dev,
             )
 
             site2idx = res[0]  # number of points [0,5,10,15,20] means there are 4 polygons with indexes 0..5 etc
@@ -249,14 +249,18 @@ def _split_polygon(
 
             if len(devided_zones) != len(areas):
                 raise ValueError(f"Number of devided_zones does not match {len(areas)}: {len(devided_zones)}")
-            devided_zones = devided_zones.explode(ignore_index=True)
+
             devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index").drop(
                 columns=["index", "area", "site_indeed", "zone_id", "ratio_sqrt", "area_sqrt"]
             )
             for ind, row in devided_zones.iterrows():
                 geom = row.geometry
                 if isinstance(geom, MultiPolygon):
-                    raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
+                    if i < attempts-1:
+                        raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
+                    else:
+                        devided_zones = devided_zones.explode(ignore_index=True)
+                        continue
 
             new_roads = [
                 (vtxv2xy[x[0]], vtxv2xy[x[1]])

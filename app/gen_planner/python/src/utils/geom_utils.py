@@ -145,5 +145,5 @@ def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFra
     contains = non_splitters.sjoin(non_splitters, predicate="contains")
     to_kick = contains[~(contains.index == contains["index_right"])]["index_right"].to_list()
     polygons.drop(index=to_kick, inplace=True)
-    polygons = polygons[polygons.area >= 0.1]
+    polygons = polygons[polygons.area >= 1]
     return polygons.to_crs(original_crs)

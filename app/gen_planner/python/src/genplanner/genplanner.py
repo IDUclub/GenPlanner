@@ -13,11 +13,11 @@ from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import polygonize
 
 from app.gen_planner.python.src.tasks import (
-    gdf2block_initial,
-    poly2func2terr2block_initial,
     feature2terr2block_initial,
-    gdf_splitter,
     features2terr2block_initial,
+    gdf2block_initial,
+    gdf_splitter,
+    poly2func2terr2block_initial,
 )
 from app.gen_planner.python.src.utils import geometry_to_multilinestring
 from app.gen_planner.python.src.zoning import FuncZone, GenPlan, TerritoryZone, basic_func_zone, gen_plan
@@ -70,6 +70,7 @@ class GenPlanner:
 
     def _run(self, initial_func, *args, **kwargs):
         task_queue = multiprocessing.Queue()
+        kwargs.update({"dev_mod": self.dev_mod})
         task_queue.put((initial_func, args, kwargs))
         res, roads = parallel_split_queue(task_queue, self.local_crs, dev=self.dev_mod)
 

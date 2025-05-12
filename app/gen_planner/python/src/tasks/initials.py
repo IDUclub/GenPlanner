@@ -2,14 +2,22 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import pulp
-from shapely import LineString
+from loguru import logger
+from shapely import LineString, Polygon
 from shapely.ops import polygonize, unary_union
 
 from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.tasks.splitters import _split_polygon, poly2block_splitter
-from app.gen_planner.python.src.utils import elastic_wrap, geometry_to_multilinestring
+from app.gen_planner.python.src.utils import (
+    denormalize_coords,
+    generate_points,
+    normalize_coords,
+    polygon_angle,
+    rotate_coords,
+    elastic_wrap,
+    geometry_to_multilinestring,
+)
 from app.gen_planner.python.src.zoning import FuncZone
-from loguru import logger
 
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()
@@ -72,16 +80,26 @@ def features2terr2block_initial(task, **kwargs):
     )
     terr_zones = filter_terr_zone(terr_zones, gdf["feature_area"].sum())
 
-    proxy_zones, roads = _split_polygon(
+    pivot_point = territory_union.centroid
+    angle_rad_to_rotate = polygon_angle(territory_union)
+    territory_union = Polygon(rotate_coords(territory_union.exterior.coords, pivot_point, -angle_rad_to_rotate))
+
+    proxy_zones, _ = _split_polygon(
         polygon=territory_union,
         areas_dict=terr_zones["ratio"].to_dict(),
         point_radius=poisson_n_radius.get(len(terr_zones), 0.1),
         local_crs=local_crs,
     )
+
+    if not proxy_zones.empty:
+        proxy_zones.geometry = proxy_zones.geometry.apply(
+            lambda x: Polygon(rotate_coords(x.exterior.coords, pivot_point, angle_rad_to_rotate))
+        )
+
     # proxy_generation = proxy_zones.copy()
     # proxy_generation['proxy'] = 1
 
-    roads["roads_width"] = 5
+    # roads["roads_width"] = 5
     lines_orig = gdf.geometry.apply(geometry_to_multilinestring).to_list()
     lines_new = proxy_zones.geometry.apply(geometry_to_multilinestring).to_list()
 
@@ -105,7 +123,7 @@ def features2terr2block_initial(task, **kwargs):
     terr_zones = terr_zones.reset_index(names="zone")
     terr_zones["zone"] = terr_zones["zone"].apply(lambda x: x.name)
 
-    terr_zones["required_area"] = terr_zones["required_area"] * 0.99999
+    terr_zones["required_area"] = terr_zones["required_area"] * 0.999
 
     zone_capacity = division.groupby("index")["feature_area"].first().to_dict()
     zone_permitted = set(division[["index", "zone_to_add"]].itertuples(index=False, name=None))
@@ -136,8 +154,8 @@ def features2terr2block_initial(task, **kwargs):
 
     model += pulp.lpSum(slack[i, z] for (i, z) in slack), "MinimizeTotalSlack"
 
-    solver = pulp.PULP_CBC_CMD(msg=True)
-    model.solve(solver)
+
+    model.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20,gapRel=0.02))
     print("Статус:", pulp.LpStatus[model.status])
 
     allocations = []
@@ -208,19 +226,33 @@ def feature2terr2block_initial(task, **kwargs):
         data = {"territory_zone": [profile_terr], "func_zone": [func_zone], "geometry": [poly]}
         return {"generation": gpd.GeoDataFrame(data=data, geometry="geometry", crs=local_crs)}
 
+    pivot_point = poly.centroid
+    angle_rad_to_rotate = polygon_angle(poly)
+    poly = Polygon(rotate_coords(poly.exterior.coords, pivot_point, -angle_rad_to_rotate))
+
     zones, roads = _split_polygon(
         polygon=poly,
         areas_dict=terr_zones["ratio"].to_dict(),
         point_radius=poisson_n_radius.get(len(terr_zones), 0.1),
         local_crs=local_crs,
     )
+
+    if not zones.empty:
+        zones.geometry = zones.geometry.apply(
+            lambda x: Polygon(rotate_coords(x.exterior.coords, pivot_point, angle_rad_to_rotate))
+        )
+    if not roads.empty:
+        roads.geometry = roads.geometry.apply(
+            lambda x: LineString(rotate_coords(x.coords, pivot_point, angle_rad_to_rotate))
+        )
+
     road_lvl = "regulated highway"
     roads["road_lvl"] = road_lvl
     roads["roads_width"] = roads_width_def.get("regulated highway")
 
     if not split_further:
-        zones["func_zone"] = func_zone.name
-        zones["territory_zone"] = zones["zone_name"].apply(lambda x: x.name)
+        zones["func_zone"] = func_zone
+        zones["territory_zone"] = zones["zone_name"]
         zones = zones[["func_zone", "territory_zone", "geometry"]]
         return {"generation": zones, "generated_roads": roads}
 

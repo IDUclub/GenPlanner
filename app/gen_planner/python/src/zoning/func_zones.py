@@ -1,5 +1,5 @@
-from .terr_zones import TerritoryZone
 from ._basic_terr_zones import *
+from .terr_zones import TerritoryZone
 
 
 class FuncZone:
@@ -22,9 +22,9 @@ class FuncZone:
 
     @staticmethod
     def _recalculate_ratio(zones_ratio):
-        # remove 10% for roads
+        # remove 25% for roads
         if transport_terr in zones_ratio.keys():
-            zones_ratio[transport_terr] = zones_ratio[transport_terr] * 0.9
+            zones_ratio[transport_terr] = zones_ratio[transport_terr] * 0.75
 
         r_sum = sum(zones_ratio.values())
         return {zone: ratio / r_sum for zone, ratio in zones_ratio.items()}
