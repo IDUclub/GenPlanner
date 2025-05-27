@@ -30,7 +30,7 @@ class GenPlanner:
     angle_rad_to_rotate: float | Literal["auto"]
     source_multipolygon: bool = False
 
-    geometry_transformer4326: Transformer
+    # geometry_transformer4326: Transformer
     dev_mod: bool = False
 
     def __init__(
@@ -57,7 +57,7 @@ class GenPlanner:
     def _create_working_gdf(self, gdf: gpd.GeoDataFrame) -> Polygon | MultiPolygon:
         self.original_territory = gdf.copy()
         self.local_crs = gdf.estimate_utm_crs()
-        self.geometry_transformer4326 = Transformer.from_crs("EPSG:4326", self.local_crs, always_xy=True)
+        # self.geometry_transformer4326 = Transformer.from_crs("EPSG:4326", self.local_crs, always_xy=True)
         gdf = gdf.to_crs(self.local_crs).explode(index_parts=False)
         gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
         if len(gdf) == 0:
@@ -100,6 +100,7 @@ class GenPlanner:
         """
         Splits every feature in working gdf according to provided zones_ratio_dict or zones_n
 
+        :param fixed_zones:
         :param zones_ratio_dict:
         :param zones_n:
         :param roads_width:

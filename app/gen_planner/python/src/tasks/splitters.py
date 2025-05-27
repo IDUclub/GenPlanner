@@ -24,7 +24,6 @@ roads_width_def = config.roads_width_def.copy()
 
 def gdf_splitter(task, **kwargs):
     gdf, areas_dict, roads_width, fixed_zones = task
-    print(kwargs.get("dev_mod"))
     n_areas = len(areas_dict)
     generated_zones = []
     generated_roads = []
@@ -179,12 +178,13 @@ def _split_polygon(
             fixed_points.append((xy[0][0], xy[0][1], room_idx))
 
     normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds))
-
-    attempts = 10
-    for i in range(attempts):  # 10 attempts
-
+    print('point_radius', point_radius)
+    print('area_num', len(areas_init))
+    attempts = 250
+    for i in range(attempts):
         try:
             poisson_points = generate_points(normalized_polygon, point_radius)
+            print('kol-vo', len(poisson_points))
             full_area = normalized_polygon.area
             areas = areas_init.copy()
 
@@ -256,12 +256,13 @@ def _split_polygon(
             for ind, row in devided_zones.iterrows():
                 geom = row.geometry
                 if isinstance(geom, MultiPolygon):
+                    print(i)
                     if i < attempts-1:
                         raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
                     else:
                         devided_zones = devided_zones.explode(ignore_index=True)
                         continue
-
+            print('_______')
             new_roads = [
                 (vtxv2xy[x[0]], vtxv2xy[x[1]])
                 for x in np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)

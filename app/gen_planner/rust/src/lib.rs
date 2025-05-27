@@ -359,10 +359,10 @@ pub fn optimize(
         let (vtxv2xy, voronoi_info) = del_candle::voronoi2::voronoi(&vtxl2xy, &site2xy, |i_site| {
             site2room[i_site] != usize::MAX
         });
-        let edge2vtxv_wall = crate::edge2vtvx_wall(&voronoi_info, &site2room);
+        let edge2vtxv_wall = edge2vtvx_wall(&voronoi_info, &site2room);
 
         let (loss_each_area, loss_total_area) = {
-            let room2area = crate::room2area(
+            let room2area = room2area(
                 &site2room,
                 room2area_trg.dims2()?.0,
                 &voronoi_info.site2idx,

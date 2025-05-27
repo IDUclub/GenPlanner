@@ -3,7 +3,7 @@ import math
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from scipy.stats._qmc import PoissonDisk
+from scipy.stats.qmc import PoissonDisk
 from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
 from shapely.ops import polygonize, unary_union
 
@@ -82,18 +82,13 @@ def denormalize_coords(normalized_coords: list[tuple[float, float]], bounds: tup
     return denormalized_coords
 
 
-def generate_points(area_to_fill: Polygon, radius, seed=None):
-    if seed is None:
-        seed = np.random.default_rng()
-
+def generate_points(area_to_fill: Polygon, radius):
     bbox = area_to_fill.envelope
     min_x, min_y, max_x, max_y = bbox.bounds
     width = max_x - min_x
     height = max_y - min_y
-
     norm_radius = radius / max(width, height)
-
-    engine = PoissonDisk(d=2, radius=norm_radius, seed=seed)
+    engine = PoissonDisk(d=2, radius=norm_radius)
     points = engine.random(int((1 // (math.pi * radius**2)) * bbox.area * 10))
     points_in_polygon = np.array([point for point in points])
     return points_in_polygon
