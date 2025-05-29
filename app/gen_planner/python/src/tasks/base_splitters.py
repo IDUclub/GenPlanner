@@ -1,9 +1,6 @@
-import os
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from loguru import logger
 from pyproj import CRS
 from rust_optimizer import optimize_space
 from shapely import Point
@@ -73,71 +70,15 @@ def gdf_splitter(task, **kwargs):
     return {"generation": zones, "generated_roads": roads}
 
 
-def poly2block_splitter(task, **kwargs):
-    polygon, delimeters, min_area, deep, roads_widths = task
-
-    if deep == len(delimeters):
-        n_areas = min(6, int(polygon.area // min_area))
-    else:
-        n_areas = delimeters[deep - 1]
-        n_areas = min(n_areas, int(polygon.area // min_area))
-
-    if n_areas in [0, 1]:
-        data = {key: [value] for key, value in kwargs.items() if key in ["territory_zone", "func_zone", "gen_plan"]}
-        blocks = gpd.GeoDataFrame(data=data, geometry=[polygon], crs=kwargs.get("local_crs"))
-        return {"generation": blocks}
-
-    areas_dict = {x: 1 / n_areas for x in range(n_areas)}
-
-    pivot_point = polygon.centroid
-    angle_rad_to_rotate = polygon_angle(polygon)
-    polygon = Polygon(rotate_coords(polygon.exterior.coords, pivot_point, -angle_rad_to_rotate))
-    blocks, roads = _split_polygon(
-        polygon=polygon,
-        areas_dict=areas_dict,
-        point_radius=poisson_n_radius.get(n_areas, 0.1),
-        local_crs=kwargs.get("local_crs"),
-    )
-    if not blocks.empty:
-        blocks.geometry = blocks.geometry.apply(
-            lambda x: Polygon(rotate_coords(x.exterior.coords, pivot_point, angle_rad_to_rotate))
-        )
-    if not roads.empty:
-        roads.geometry = roads.geometry.apply(
-            lambda x: LineString(rotate_coords(x.coords, pivot_point, angle_rad_to_rotate))
-        )
-    road_lvl = "local road"
-    roads["road_lvl"] = f"{road_lvl}, level {deep}"
-    roads["roads_width"] = roads_widths[deep - 1]
-    if deep == len(delimeters):
-        data = {
-            key: [value] * len(blocks)
-            for key, value in kwargs.items()
-            if key in ["territory_zone", "func_zone", "gen_plan"]
-        }
-        blocks = gpd.GeoDataFrame(data=data, geometry=blocks.geometry, crs=kwargs.get("local_crs"))
-        return {"generation": blocks, "generated_roads": roads}
-    else:
-        deep = deep + 1
-        blocks = blocks.geometry
-        tasks = []
-        for poly in blocks:
-            if poly is not None:
-                tasks.append((poly2block_splitter, (Polygon(poly), delimeters, min_area, deep, roads_widths), kwargs))
-
-        return {"new_tasks": tasks, "generated_roads": roads}
-
-
 def _split_polygon(
-    polygon: Polygon,
-    areas_dict: dict,
-    local_crs: CRS,
-    point_radius: float = 0.1,
-    zone_connections: list = None,
-    fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
-    dev=False,
+        polygon: Polygon,
+        areas_dict: dict,
+        local_crs: CRS,
+        point_radius: float = 0.1,
+        zone_connections: list = None,
+        fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
+        dev=False,
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-
     def create_polygons(site2idx, site2room, idx2vtxv, vtxv2xy):
         poly_coords = []
         poly_sites = []
@@ -257,7 +198,7 @@ def _split_polygon(
                 geom = row.geometry
                 if isinstance(geom, MultiPolygon):
                     print(i)
-                    if i < attempts-1:
+                    if i < attempts - 1:
                         raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
                     else:
                         devided_zones = devided_zones.explode(ignore_index=True)
@@ -282,4 +223,4 @@ def _split_polygon(
                     f" radius: {point_radius}, \n"
                     f" {e}"
                 )
-            # return gpd.GeoDataFrame()
+    return gpd.GeoDataFrame(), gpd.GeoDataFrame()

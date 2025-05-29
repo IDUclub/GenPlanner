@@ -18,7 +18,8 @@ def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
     gdf = gdf.copy()
     multip = gpd.GeoDataFrame(geometry=[gdf.union_all()], crs=gdf.crs).explode(ignore_index=True)
     max_dist = (
-        np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0)) + 0.1
+            np.ceil(
+                multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0)) + 0.1
     )
     if pd.isna(max_dist):
         max_dist = 1
@@ -89,7 +90,7 @@ def generate_points(area_to_fill: Polygon, radius):
     height = max_y - min_y
     norm_radius = radius / max(width, height)
     engine = PoissonDisk(d=2, radius=norm_radius)
-    points = engine.random(int((1 // (math.pi * radius**2)) * bbox.area * 10))
+    points = engine.random(int((1 // (math.pi * radius ** 2)) * bbox.area * 10))
     points_in_polygon = np.array([point for point in points])
     return points_in_polygon
 
@@ -115,10 +116,13 @@ def geometry_to_multilinestring(geom):
     return LineString()
 
 
-def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame | list[gpd.GeoDataFrame],
+                       return_splitters=False) -> gpd.GeoDataFrame:
     original_crs = gdf_to_split.crs
     local_crs = gdf_to_split.estimate_utm_crs()
     gdf_to_split = gdf_to_split.to_crs(local_crs)
+    if isinstance(splitters, list):
+        splitters = pd.concat(splitters,ignore_index=True)
     splitters = splitters.to_crs(local_crs)
     lines_orig = gdf_to_split.geometry.apply(geometry_to_multilinestring).to_list()
     lines_splitters = splitters.geometry.apply(geometry_to_multilinestring).to_list()
@@ -141,4 +145,6 @@ def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFra
     to_kick = contains[~(contains.index == contains["index_right"])]["index_right"].to_list()
     polygons.drop(index=to_kick, inplace=True)
     polygons = polygons[polygons.area >= 1]
+    if not return_splitters:
+        return polygons[~polygons['is_splitter']].to_crs(original_crs).drop(columns=["is_splitter"])
     return polygons.to_crs(original_crs)

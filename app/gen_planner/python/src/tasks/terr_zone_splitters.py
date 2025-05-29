@@ -1,5 +1,4 @@
 import geopandas as gpd
-import numpy as np
 import pandas as pd
 import pulp
 from loguru import logger
@@ -7,11 +6,9 @@ from shapely import LineString, Polygon
 from shapely.ops import polygonize, unary_union
 
 from app.gen_planner.python.src._config import config
-from app.gen_planner.python.src.tasks.splitters import _split_polygon, poly2block_splitter
+from app.gen_planner.python.src.tasks.base_splitters import _split_polygon
+from app.gen_planner.python.src.tasks.block_splitters import multi_feature2blocks_initial
 from app.gen_planner.python.src.utils import (
-    denormalize_coords,
-    generate_points,
-    normalize_coords,
     polygon_angle,
     rotate_coords,
     elastic_wrap,
@@ -21,32 +18,6 @@ from app.gen_planner.python.src.zoning import FuncZone
 
 poisson_n_radius = config.poisson_n_radius.copy()
 roads_width_def = config.roads_width_def.copy()
-
-
-def poly2func2terr2block_initial(task, **kwargs):
-    territory, genplan, split_further = task
-    areas_dict = genplan.func_zone_ratio
-    local_crs = kwargs.get("local_crs")
-    zones, roads = _split_polygon(
-        polygon=territory,
-        areas_dict=areas_dict,
-        point_radius=poisson_n_radius.get(len(areas_dict), 0.1),
-        local_crs=local_crs,
-    )
-    road_lvl = "high speed highway"
-    roads["road_lvl"] = road_lvl
-    roads["roads_width"] = roads_width_def.get("high speed highway")
-    if not split_further:
-        zones["gen_plan"] = genplan.name
-        zones["func_zone"] = zones["zone_name"].apply(lambda x: x.name)
-        zones = zones[["gen_plan", "func_zone", "geometry"]]
-        return zones, False, roads
-
-    tasks = []
-    kwargs.update({"gen_plan": genplan.name})
-    for _, zone in zones.iterrows():
-        tasks.append((feature2terr2block_initial, (zone.geometry, zone.zone_name, True), kwargs))
-    return tasks, True, roads
 
 
 def filter_terr_zone(terr_zones: pd.DataFrame, area) -> pd.DataFrame:
@@ -64,7 +35,7 @@ def filter_terr_zone(terr_zones: pd.DataFrame, area) -> pd.DataFrame:
     return terr_zones
 
 
-def features2terr2block_initial(task, **kwargs):
+def multi_feature2terr_zones_initial(task, **kwargs):
     gdf, func_zone, split_further = task
     local_crs = gdf.crs
     gdf["feature_area"] = gdf.area
@@ -96,10 +67,7 @@ def features2terr2block_initial(task, **kwargs):
             lambda x: Polygon(rotate_coords(x.exterior.coords, pivot_point, angle_rad_to_rotate))
         )
 
-    # proxy_generation = proxy_zones.copy()
-    # proxy_generation['proxy'] = 1
 
-    # roads["roads_width"] = 5
     lines_orig = gdf.geometry.apply(geometry_to_multilinestring).to_list()
     lines_new = proxy_zones.geometry.apply(geometry_to_multilinestring).to_list()
 
@@ -154,8 +122,7 @@ def features2terr2block_initial(task, **kwargs):
 
     model += pulp.lpSum(slack[i, z] for (i, z) in slack), "MinimizeTotalSlack"
 
-
-    model.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20,gapRel=0.02))
+    model.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20, gapRel=0.02))
     print("Статус:", pulp.LpStatus[model.status])
 
     allocations = []
@@ -188,11 +155,11 @@ def features2terr2block_initial(task, **kwargs):
             }
             task_gdf = gpd.GeoDataFrame(geometry=[row.geometry], crs=local_crs)
             task_func_zone = FuncZone(zones_ratio_dict, name=func_zone.name)
-            new_tasks.append((feature2terr2block_initial, (task_gdf, task_func_zone, split_further), kwargs))
+            new_tasks.append((feature2terr_zones_initial, (task_gdf, task_func_zone, split_further), kwargs))
     block_splitter_gdf = pd.concat(ready_for_blocks)
 
     if split_further:
-        new_tasks.append((gdf2block_initial, (block_splitter_gdf,), kwargs))
+        new_tasks.append((multi_feature2blocks_initial, (block_splitter_gdf,), kwargs))
         return {"new_tasks": new_tasks}
 
         # return {"new_tasks": new_tasks,"generation":proxy_generation}
@@ -205,7 +172,7 @@ def features2terr2block_initial(task, **kwargs):
         # return {"new_tasks": new_tasks, "generation": pd.concat([block_splitter_gdf,proxy_generation],ignore_index=True)}
 
 
-def feature2terr2block_initial(task, **kwargs):
+def feature2terr_zones_initial(task, **kwargs):
     gdf, func_zone, split_further = task
 
     # TODO split gdf on parts with pulp if too big for 1 funczone
@@ -258,51 +225,5 @@ def feature2terr2block_initial(task, **kwargs):
 
     kwargs.update({"func_zone": func_zone.name})
     zones["territory_zone"] = zones["zone_name"]
-    task = [(gdf2block_initial, (zones,), kwargs)]
+    task = [(multi_feature2blocks_initial, (zones,), kwargs)]
     return {"new_tasks": task, "generated_roads": roads}
-
-
-def gdf2block_initial(task, **kwargs):
-    (poly_gdf,) = task
-    if not isinstance(poly_gdf, gpd.GeoDataFrame):
-        raise ValueError(f"poly_gdf wrong dtype {type(poly_gdf)}")
-
-    kwargs.update({"local_crs": poly_gdf.crs})
-    new_tasks = []
-    for ind, row in poly_gdf.iterrows():
-        zone_kwargs = kwargs.copy()
-        zone_kwargs.update({"territory_zone": row.territory_zone})
-        target_area = row.geometry.area
-        min_area = row.territory_zone.min_block_area
-        max_delimeter = 6
-        temp_area = min_area
-        delimeters = []
-        while temp_area < target_area:
-            temp_area = temp_area * max_delimeter
-            delimeters.append(max_delimeter)
-        if len(delimeters) == 0:
-            new_tasks.append(
-                (
-                    poly2block_splitter,
-                    (row.geometry, [1], min_area, 1, [roads_width_def.get("local road")]),
-                    zone_kwargs,
-                )
-            )
-            continue
-
-        min_split = 2
-        if len(delimeters) == 1:
-            min_split = 1
-        i = 0
-        while temp_area > target_area:
-            if delimeters[i] > min_split:
-                delimeters[i] = delimeters[i] - 1
-            else:
-                i += 1
-            temp_area = min_area * np.prod(delimeters)
-        delimeters[i] = delimeters[i] + 1
-        roads_widths = np.linspace(
-            int(roads_width_def.get("regulated highway") * 0.66), roads_width_def.get("local road"), len(delimeters)
-        )
-        new_tasks.append((poly2block_splitter, (row.geometry, delimeters, min_area, 1, roads_widths), zone_kwargs))
-    return {"new_tasks": new_tasks}
