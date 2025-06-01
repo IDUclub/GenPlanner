@@ -13,7 +13,7 @@ class TerritoryZone:
         return self.__str__()
 
 
-minimum_block_area = 160000
+minimum_block_area = 80000
 
 residential_terr = TerritoryZone(
     "residential",

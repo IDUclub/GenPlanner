@@ -35,7 +35,7 @@ def gdf_splitter(task, **kwargs):
                 fixed_zones_in_poly["geometry"] = fixed_zones_in_poly["geometry"].apply(
                     lambda x: Point(rotate_coords(x.coords, pivot_point, -angle_rad_to_rotate))
                 )
-                fixed_zones_in_poly = fixed_zones_in_poly.groupby("zone").agg({"geometry": list})
+                fixed_zones_in_poly = fixed_zones_in_poly.groupby("fixed_zone").agg({"geometry": list})
                 fixed_zones_in_poly = fixed_zones_in_poly["geometry"].to_dict()
             else:
                 fixed_zones_in_poly = None
@@ -79,6 +79,7 @@ def _split_polygon(
         fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
         dev=False,
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+
     def create_polygons(site2idx, site2room, idx2vtxv, vtxv2xy):
         poly_coords = []
         poly_sites = []
@@ -119,13 +120,12 @@ def _split_polygon(
             fixed_points.append((xy[0][0], xy[0][1], room_idx))
 
     normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds))
-    print('point_radius', point_radius)
-    print('area_num', len(areas_init))
-    attempts = 250
+
+    attempts = 100
     for i in range(attempts):
         try:
             poisson_points = generate_points(normalized_polygon, point_radius)
-            print('kol-vo', len(poisson_points))
+
             full_area = normalized_polygon.area
             areas = areas_init.copy()
 
@@ -197,13 +197,13 @@ def _split_polygon(
             for ind, row in devided_zones.iterrows():
                 geom = row.geometry
                 if isinstance(geom, MultiPolygon):
-                    print(i)
+
                     if i < attempts - 1:
                         raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
                     else:
                         devided_zones = devided_zones.explode(ignore_index=True)
                         continue
-            print('_______')
+
             new_roads = [
                 (vtxv2xy[x[0]], vtxv2xy[x[1]])
                 for x in np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)

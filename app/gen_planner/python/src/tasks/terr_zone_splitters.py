@@ -2,7 +2,7 @@ import geopandas as gpd
 import pandas as pd
 import pulp
 from loguru import logger
-from shapely import LineString, Polygon
+from shapely import LineString, Polygon, Point
 from shapely.ops import polygonize, unary_union
 
 from app.gen_planner.python.src._config import config
@@ -36,7 +36,7 @@ def filter_terr_zone(terr_zones: pd.DataFrame, area) -> pd.DataFrame:
 
 
 def multi_feature2terr_zones_initial(task, **kwargs):
-    gdf, func_zone, split_further = task
+    gdf, func_zone, split_further, fixed_terr_zones = task
     local_crs = gdf.crs
     gdf["feature_area"] = gdf.area
     # TODO split gdf on parts with pulp if too big for 1 func_zone
@@ -53,6 +53,26 @@ def multi_feature2terr_zones_initial(task, **kwargs):
 
     pivot_point = territory_union.centroid
     angle_rad_to_rotate = polygon_angle(territory_union)
+
+    if fixed_terr_zones is None:
+        fixed_terr_zones = gpd.GeoDataFrame()
+
+    if len(fixed_terr_zones) > 0:
+        fixed_zones_in_poly = fixed_terr_zones[fixed_terr_zones.within(territory_union)]
+        if len(fixed_zones_in_poly) > 0:
+            fixed_zones_in_poly["geometry"] = fixed_zones_in_poly["geometry"].apply(
+                lambda x: Point(rotate_coords(x.coords, pivot_point, -angle_rad_to_rotate))
+            )
+            fixed_zones_in_poly["zone_name"] = fixed_zones_in_poly["fixed_zone"].apply(lambda x: x.name)
+            fixed_zones_in_poly = fixed_zones_in_poly.groupby("zone_name", as_index=False).agg(
+                {"geometry": list, "fixed_zone": "first"}
+            )
+            fixed_zones_in_poly = fixed_zones_in_poly.set_index("fixed_zone")["geometry"].to_dict()
+        else:
+            fixed_zones_in_poly = None
+    else:
+        fixed_zones_in_poly = None
+
     territory_union = Polygon(rotate_coords(territory_union.exterior.coords, pivot_point, -angle_rad_to_rotate))
 
     proxy_zones, _ = _split_polygon(
@@ -60,13 +80,27 @@ def multi_feature2terr_zones_initial(task, **kwargs):
         areas_dict=terr_zones["ratio"].to_dict(),
         point_radius=poisson_n_radius.get(len(terr_zones), 0.1),
         local_crs=local_crs,
+        fixed_zone_points=fixed_zones_in_poly,
     )
 
+    # Разворачиваем прокси зоны обратно
     if not proxy_zones.empty:
         proxy_zones.geometry = proxy_zones.geometry.apply(
             lambda x: Polygon(rotate_coords(x.exterior.coords, pivot_point, angle_rad_to_rotate))
         )
 
+    proxy_fix_points = proxy_zones.copy()
+    proxy_fix_points.geometry = proxy_fix_points.geometry.centroid
+    if len(fixed_terr_zones) > 0:
+        proxy_fix_points = proxy_fix_points.merge(
+            fixed_terr_zones,
+            left_on='zone_name',
+            right_on='fixed_zone',
+            how='left',
+            suffixes=('', '_fixed')
+        )
+        proxy_fix_points['geometry'] = proxy_fix_points['geometry_fixed'].combine_first(proxy_fix_points['geometry'])
+        proxy_fix_points = proxy_fix_points.drop(columns=['geometry_fixed', 'fixed_zone','ratio'])
 
     lines_orig = gdf.geometry.apply(geometry_to_multilinestring).to_list()
     lines_new = proxy_zones.geometry.apply(geometry_to_multilinestring).to_list()
@@ -155,7 +189,10 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             }
             task_gdf = gpd.GeoDataFrame(geometry=[row.geometry], crs=local_crs)
             task_func_zone = FuncZone(zones_ratio_dict, name=func_zone.name)
-            new_tasks.append((feature2terr_zones_initial, (task_gdf, task_func_zone, split_further), kwargs))
+            task_fixed_terr_zones = None
+            new_tasks.append(
+                (feature2terr_zones_initial, (task_gdf, task_func_zone, split_further, task_fixed_terr_zones), kwargs)
+            )
     block_splitter_gdf = pd.concat(ready_for_blocks)
 
     if split_further:
@@ -163,23 +200,23 @@ def multi_feature2terr_zones_initial(task, **kwargs):
         return {"new_tasks": new_tasks}
 
         # return {"new_tasks": new_tasks,"generation":proxy_generation}
-
     else:
-        block_splitter_gdf["func_zone"] = func_zone.name
-        block_splitter_gdf["territory_zone"] = block_splitter_gdf["territory_zone"].apply(lambda x: x.name)
+        block_splitter_gdf["func_zone"] = func_zone
+        # block_splitter_gdf["territory_zone"] = block_splitter_gdf["territory_zone"].apply(lambda x: x.name)
         return {"new_tasks": new_tasks, "generation": block_splitter_gdf}
 
         # return {"new_tasks": new_tasks, "generation": pd.concat([block_splitter_gdf,proxy_generation],ignore_index=True)}
 
 
 def feature2terr_zones_initial(task, **kwargs):
-    gdf, func_zone, split_further = task
+    gdf, func_zone, split_further, fixed_terr_zones = task
 
-    # TODO split gdf on parts with pulp if too big for 1 funczone
+    # TODO split gdf on parts if too big for 1 funczone
 
-    poly = gdf.iloc[0].geometry
+    polygon = gdf.iloc[0].geometry
     local_crs = gdf.crs
-    area = poly.area
+    area = polygon.area
+
     terr_zones = pd.DataFrame.from_dict(
         {terr_zone: [ratio, terr_zone.min_block_area] for terr_zone, ratio in func_zone.zones_ratio.items()},
         orient="index",
@@ -190,18 +227,39 @@ def feature2terr_zones_initial(task, **kwargs):
 
     if len(terr_zones) == 0:
         profile_terr = max(func_zone.zones_ratio.items(), key=lambda x: x[1])[0]
-        data = {"territory_zone": [profile_terr], "func_zone": [func_zone], "geometry": [poly]}
+        data = {"territory_zone": [profile_terr], "func_zone": [func_zone], "geometry": [polygon]}
         return {"generation": gpd.GeoDataFrame(data=data, geometry="geometry", crs=local_crs)}
 
-    pivot_point = poly.centroid
-    angle_rad_to_rotate = polygon_angle(poly)
-    poly = Polygon(rotate_coords(poly.exterior.coords, pivot_point, -angle_rad_to_rotate))
+    pivot_point = polygon.centroid
+    angle_rad_to_rotate = polygon_angle(polygon)
+
+    if fixed_terr_zones is None:
+        fixed_terr_zones = gpd.GeoDataFrame()
+
+    if len(fixed_terr_zones) > 0:
+        fixed_zones_in_poly = fixed_terr_zones[fixed_terr_zones.within(polygon)]
+        if len(fixed_zones_in_poly) > 0:
+            fixed_zones_in_poly["geometry"] = fixed_zones_in_poly["geometry"].apply(
+                lambda x: Point(rotate_coords(x.coords, pivot_point, -angle_rad_to_rotate))
+            )
+            fixed_zones_in_poly["zone_name"] = fixed_zones_in_poly["fixed_zone"].apply(lambda x: x.name)
+            fixed_zones_in_poly = fixed_zones_in_poly.groupby("zone_name", as_index=False).agg(
+                {"geometry": list, "fixed_zone": "first"}
+            )
+            fixed_zones_in_poly = fixed_zones_in_poly.set_index("fixed_zone")["geometry"].to_dict()
+        else:
+            fixed_zones_in_poly = None
+    else:
+        fixed_zones_in_poly = None
+
+    polygon = Polygon(rotate_coords(polygon.exterior.coords, pivot_point, -angle_rad_to_rotate))
 
     zones, roads = _split_polygon(
-        polygon=poly,
+        polygon=polygon,
         areas_dict=terr_zones["ratio"].to_dict(),
         point_radius=poisson_n_radius.get(len(terr_zones), 0.1),
         local_crs=local_crs,
+        fixed_zone_points=fixed_zones_in_poly,
     )
 
     if not zones.empty:
@@ -223,6 +281,7 @@ def feature2terr_zones_initial(task, **kwargs):
         zones = zones[["func_zone", "territory_zone", "geometry"]]
         return {"generation": zones, "generated_roads": roads}
 
+    # if split further
     kwargs.update({"func_zone": func_zone.name})
     zones["territory_zone"] = zones["zone_name"]
     task = [(multi_feature2blocks_initial, (zones,), kwargs)]
