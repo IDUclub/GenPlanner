@@ -7,7 +7,7 @@ import pandas as pd
 from loguru import logger
 from pyproj import CRS
 from shapely.geometry import MultiPolygon, Polygon
-from shapely.ops import polygonize
+from shapely.ops import polygonize, unary_union
 
 from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.tasks import (
@@ -16,7 +16,12 @@ from app.gen_planner.python.src.tasks import (
     multi_feature2blocks_initial,
     gdf_splitter,
 )
-from app.gen_planner.python.src.utils import geometry_to_multilinestring, territory_splitter, explode_linestring
+from app.gen_planner.python.src.utils import (
+    geometry_to_multilinestring,
+    territory_splitter,
+    explode_linestring,
+    patch_polygon_interior,
+)
 from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone, basic_func_zone
 
 roads_width_def = config.roads_width_def.copy()
@@ -29,48 +34,69 @@ class GenPlanner:
     territory_to_work_with: gpd.GeoDataFrame
     local_crs: CRS
     user_valid_roads: gpd.GeoDataFrame
-    # angle_rad_to_rotate: float | Literal["auto"]
     source_multipolygon: bool = False
 
-    # geometry_transformer4326: Transformer
     dev_mod: bool = False
 
     def __init__(
-            self,
-            features: gpd.GeoDataFrame,
-            roads: gpd.GeoDataFrame = None,
-            **kwargs,
+        self,
+        features: gpd.GeoDataFrame,
+        roads: gpd.GeoDataFrame = None,
+        exclude_features: gpd.GeoDataFrame = None,
+        **kwargs,
     ):
-        features.reset_index(names="new_node_index")
+        self.original_territory = features.copy()
+        self.original_crs = features.crs
+        self.local_crs = features.estimate_utm_crs()
+
         if roads is None:
             roads = gpd.GeoDataFrame()
-        self._create_working_gdf(features.copy(), roads.copy())
+        if exclude_features is None:
+            exclude_features = gpd.GeoDataFrame()
+        self._create_working_gdf(self.original_territory.copy(), roads.copy(), exclude_features.copy())
         if "dev_mod" in kwargs:
             self.dev_mod = True
             logger.info("Dev mod activated, no more ProcessPool")
 
-    def _create_working_gdf(self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame) -> Polygon | MultiPolygon:
-        self.original_territory = gdf.copy()
-        self.original_crs = gdf.crs
-        self.local_crs = gdf.estimate_utm_crs()
+    def _create_working_gdf(
+        self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame, exclude_features: gpd.GeoDataFrame
+    ) -> Polygon | MultiPolygon:
+
         gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
+
         if len(gdf) == 0:
             raise TypeError("No valid geometries in provided GeoDataFrame")
+
         gdf = gdf.to_crs(self.local_crs)
-        roads = roads.to_crs(self.local_crs)
+
+        # gdf = territory_splitter(gdf, exclude_features, return_splitters=False)
         if len(roads) > 0:
+            roads = roads.to_crs(self.local_crs)
             gdf = territory_splitter(gdf, roads, return_splitters=False)
-            splitters_lines = gpd.GeoDataFrame(geometry=pd.Series(
-                gdf.geometry.apply(geometry_to_multilinestring).explode().apply(
-                    explode_linestring)).explode(ignore_index=True), crs=gdf.crs)
-            splitters_lines.geometry = splitters_lines.geometry.centroid.buffer(.1, resolution=1)
+            splitters_lines = gpd.GeoDataFrame(
+                geometry=pd.Series(
+                    gdf.geometry.apply(geometry_to_multilinestring).explode().apply(explode_linestring)
+                ).explode(ignore_index=True),
+                crs=gdf.crs,
+            )
+            splitters_lines.geometry = splitters_lines.geometry.centroid.buffer(0.1, resolution=1)
             roads = roads.sjoin(splitters_lines, how="inner", predicate="intersects")
-            roads = roads[~roads.index.duplicated(keep=False)]
-            local_road_width = roads_width_def.get('local road')
-            if "width" not in roads.columns:
-                roads["width"] = local_road_width
-            roads['width'] = roads['width'].fillna(local_road_width)
-            roads["road_lvl"] = 'user_roads'
+            roads = roads[~roads.index.duplicated(keep="first")]
+            local_road_width = roads_width_def.get("local road")
+            if "roads_width" not in roads.columns:
+                logger.warning(
+                    f"Column 'roads_width' missing in GeoDataFrame, filling it with default local road width {local_road_width}"
+                )
+                roads["roads_width"] = local_road_width
+            roads["roads_width"] = roads["roads_width"].fillna(local_road_width)
+            roads["road_lvl"] = "user_roads"
+        if len(exclude_features) > 0:
+            exclude_features = exclude_features.to_crs(self.local_crs)
+            exclude_union = unary_union(exclude_features.geometry)
+            gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
+            gdf = gdf.explode(ignore_index=True)
+
+        gdf.geometry = gdf.geometry.apply(patch_polygon_interior)
 
         self.user_valid_roads = roads
         self.source_multipolygon = False if len(gdf) == 1 else True
@@ -82,6 +108,7 @@ class GenPlanner:
         task_queue.put((initial_func, args, kwargs))
         res, roads = parallel_split_queue(task_queue, self.local_crs, dev=self.dev_mod)
 
+        roads = pd.concat([roads, self.user_valid_roads], ignore_index=True)
         roads_poly = roads.copy()
         roads_poly.geometry = roads_poly.apply(lambda x: x.geometry.buffer(x.roads_width / 2, resolution=4), axis=1)
         roads_poly = roads_poly.union_all()
@@ -100,7 +127,7 @@ class GenPlanner:
         polygons_points.geometry = polygons.loc[polygons_points.index].geometry
         res = polygons_points
         res.drop(columns=["index_right"], inplace=True)
-        return res, roads
+        return res.to_crs(self.original_crs), roads.to_crs(self.original_crs)
 
     def _check_fixed_zones(self, zones_ratio_dict: dict, fixed_zones: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
@@ -121,15 +148,14 @@ class GenPlanner:
                 f"Provided fixed_zone values: {fixed_zone_values}"
             )
         fixed_zones = fixed_zones.to_crs(self.local_crs)
-        joined = gpd.sjoin(fixed_zones, self.territory_to_work_with, how='left', predicate='within')
-        if joined['index_right'].isna().any():
+        joined = gpd.sjoin(fixed_zones, self.territory_to_work_with, how="left", predicate="within")
+        if joined["index_right"].isna().any():
             raise ValueError("Some points in fixed_zones are located outside the working territory geometries.")
 
         return fixed_zones
 
     def split_features(
-            self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None,
-            fixed_zones: gpd.GeoDataFrame = None
+        self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None, fixed_zones: gpd.GeoDataFrame = None
     ):
         """
         Splits every feature in working gdf according to provided zones_ratio_dict or zones_n
@@ -162,17 +188,17 @@ class GenPlanner:
         return self._run(multi_feature2blocks_initial, self.territory_to_work_with)
 
     def features2terr_zones(
-            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=False)
 
     def features2terr_zones2blocks(
-            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=True)
 
     def _features2terr_zones(
-            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
+        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
 
         if fixed_terr_zones is not None:
@@ -200,7 +226,7 @@ class GenPlanner:
 
 
 def parallel_split_queue(
-        task_queue: multiprocessing.Queue, local_crs, dev=False
+    task_queue: multiprocessing.Queue, local_crs, dev=False
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
     splitted = []
     roads_all = []

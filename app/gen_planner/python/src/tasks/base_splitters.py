@@ -71,13 +71,13 @@ def gdf_splitter(task, **kwargs):
 
 
 def _split_polygon(
-        polygon: Polygon,
-        areas_dict: dict,
-        local_crs: CRS,
-        point_radius: float = 0.1,
-        zone_connections: list = None,
-        fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
-        dev=False,
+    polygon: Polygon,
+    areas_dict: dict,
+    local_crs: CRS,
+    point_radius: float = 0.1,
+    zone_connections: list = None,
+    fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
+    dev=False,
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
 
     def create_polygons(site2idx, site2room, idx2vtxv, vtxv2xy):
@@ -121,7 +121,10 @@ def _split_polygon(
 
     normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds))
 
-    attempts = 100
+    attempts = 50
+    best_generation = (gpd.GeoDataFrame(), gpd.GeoDataFrame())
+    best_multipolygon_count = float("inf")
+    best_error = float("inf")
     for i in range(attempts):
         try:
             poisson_points = generate_points(normalized_polygon, point_radius)
@@ -191,36 +194,44 @@ def _split_polygon(
             if len(devided_zones) != len(areas):
                 raise ValueError(f"Number of devided_zones does not match {len(areas)}: {len(devided_zones)}")
 
-            devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index").drop(
-                columns=["index", "area", "site_indeed", "zone_id", "ratio_sqrt", "area_sqrt"]
+            devided_zones = devided_zones.merge(areas.reset_index(), left_on="zone_id", right_on="index")
+
+            multipolygon_count = sum(isinstance(geom, MultiPolygon) for geom in devided_zones.geometry)
+
+            # Если кол-во мультиполи больше 0, перезапускаем генерацию, но сохраняем лучший результат
+            if multipolygon_count > 0:
+                actual_areas = devided_zones.geometry.area
+                target_areas = devided_zones["area"]
+                area_error = np.mean(np.abs(actual_areas - target_areas))
+                if multipolygon_count < best_multipolygon_count or (
+                    multipolygon_count == best_multipolygon_count and area_error < best_error
+                ):
+                    new_roads = [
+                        (vtxv2xy[x[0]], vtxv2xy[x[1]])
+                        for x in np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)
+                    ]
+                    new_roads = gpd.GeoDataFrame(geometry=[LineString(x) for x in new_roads], crs=local_crs)
+                    devided_zones = devided_zones.drop(
+                        columns=["zone_id", "index", "ratio", "area", "ratio_sqrt", "area_sqrt", "site_indeed"]
+                    )
+                    best_generation = (devided_zones.copy(), new_roads.copy())
+                    best_multipolygon_count = multipolygon_count
+                    best_error = area_error
+                raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
+
+            devided_zones = devided_zones.drop(
+                columns=["zone_id", "index", "ratio", "area", "ratio_sqrt", "area_sqrt", "site_indeed"]
             )
-            for ind, row in devided_zones.iterrows():
-                geom = row.geometry
-                if isinstance(geom, MultiPolygon):
-
-                    if i < attempts - 1:
-                        raise ValueError(f"MultiPolygon returned from optimizer. Have to recalculate.")
-                    else:
-                        devided_zones = devided_zones.explode(ignore_index=True)
-                        continue
-
             new_roads = [
                 (vtxv2xy[x[0]], vtxv2xy[x[1]])
                 for x in np.array(edge2vtxv_wall).reshape(int(len(edge2vtxv_wall) / 2), 2)
             ]
             new_roads = gpd.GeoDataFrame(geometry=[LineString(x) for x in new_roads], crs=local_crs)
-
             return devided_zones, new_roads
 
-        except Exception as e:
+        except Exception:
             if i + 1 == attempts:
-                # return gpd.GeoDataFrame(geometry=[polygon], crs=local_crs), gpd.GeoDataFrame()
-                raise ValueError(
-                    f" areas_dict:{areas_dict} \n"
-                    f" areas_df:{areas} \n"
-                    f" len_points: {len(poisson_points)} \n"
-                    f" poly: {normalized_polygon}, \n"
-                    f" radius: {point_radius}, \n"
-                    f" {e}"
-                )
-    return gpd.GeoDataFrame(), gpd.GeoDataFrame()
+                devided_zones, new_roads = best_generation
+                if len(devided_zones) > 0:
+                    devided_zones = devided_zones.explode(ignore_index=True)
+                return devided_zones, new_roads

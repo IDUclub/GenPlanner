@@ -93,14 +93,10 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     proxy_fix_points.geometry = proxy_fix_points.geometry.centroid
     if len(fixed_terr_zones) > 0:
         proxy_fix_points = proxy_fix_points.merge(
-            fixed_terr_zones,
-            left_on='zone_name',
-            right_on='fixed_zone',
-            how='left',
-            suffixes=('', '_fixed')
+            fixed_terr_zones, left_on="zone_name", right_on="fixed_zone", how="left", suffixes=("", "_fixed")
         )
-        proxy_fix_points['geometry'] = proxy_fix_points['geometry_fixed'].combine_first(proxy_fix_points['geometry'])
-        proxy_fix_points = proxy_fix_points.drop(columns=['geometry_fixed', 'fixed_zone', 'ratio'])
+        proxy_fix_points["geometry"] = proxy_fix_points["geometry_fixed"].combine_first(proxy_fix_points["geometry"])
+        proxy_fix_points = proxy_fix_points.drop(columns=["geometry_fixed", "fixed_zone", "ratio"])
 
     lines_orig = initial_gdf.geometry.apply(geometry_to_multilinestring).to_list()
     lines_new = proxy_zones.geometry.apply(geometry_to_multilinestring).to_list()
@@ -126,12 +122,11 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     terr_zones["zone"] = terr_zones["zone"].apply(lambda x: x.name)
 
     terr_zones["required_area"] = terr_zones["required_area"] * 0.999
-    fixed_terr_zones['zone_name']  = fixed_terr_zones['fixed_zone'].apply(lambda x: x.name)
+
     zone_capacity = division.groupby("index")["feature_area"].first().to_dict()
     zone_permitted = set(division[["index", "zone_to_add"]].itertuples(index=False, name=None))
     min_areas = terr_zones.set_index("zone")["min_block_area"].to_dict()
     target_areas = terr_zones.set_index("zone")["required_area"].to_dict()
-    zone_strongly_fixed = set(initial_gdf.sjoin(fixed_terr_zones)[["zone_name"]].itertuples(name=None))
 
     model = pulp.LpProblem("Territorial_Zoning", pulp.LpMinimize)
 
@@ -154,10 +149,14 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             pulp.lpSum(x[i, z] for i in division["index"].unique() if (i, z) in x) >= target_areas[z],
             f"TargetArea_{z}",
         )
+    # TODO добавить запрет на нулевые зоны
 
-    for (i, z) in zone_strongly_fixed:
-        if (i, z) in x:
-            model += x[i, z] >= 1e-3, f"StronglyFixed_{i}_{z}"
+    if len(fixed_terr_zones) > 0:
+        fixed_terr_zones["zone_name"] = fixed_terr_zones["fixed_zone"].apply(lambda x: x.name)
+        zone_strongly_fixed = set(initial_gdf.sjoin(fixed_terr_zones)[["zone_name"]].itertuples(name=None))
+        for i, z in zone_strongly_fixed:
+            if (i, z) in x:
+                model += x[i, z] >= 1e-3, f"StronglyFixed_{i}_{z}"
 
     model += pulp.lpSum(slack[i, z] for (i, z) in slack), "MinimizeTotalSlack"
 
@@ -187,10 +186,9 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             terr_zone_str = terr_zones_in_poly.iloc[0]["territorial_zone"]
             terr_zone = func_zone.zones_keys[terr_zone_str]
             ready_for_blocks.append(
-                gpd.GeoDataFrame(geometry=[zone_polygon], data=[terr_zone], columns=["territory_zone"],
-                                 crs=local_crs)
+                gpd.GeoDataFrame(geometry=[zone_polygon], data=[terr_zone], columns=["territory_zone"], crs=local_crs)
             )
-        else:
+        elif len(terr_zones_in_poly) > 1:
             zone_area_total = zone_row["feature_area"]
             zones_ratio_dict = {
                 func_zone.zones_keys[row["territorial_zone"]]: row["assigned_area"] / zone_area_total
@@ -200,10 +198,12 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             task_gdf = gpd.GeoDataFrame(geometry=[zone_polygon], crs=local_crs)
             task_func_zone = FuncZone(zones_ratio_dict, name=func_zone.name)
             task_fixed_terr_zones = proxy_fix_points[
-                proxy_fix_points['zone_name'].isin(list(zones_ratio_dict.keys()))].copy()
+                proxy_fix_points["zone_name"].isin(list(zones_ratio_dict.keys()))
+            ].copy()
             task_fixed_terr_zones.rename(columns={"zone_name": "fixed_zone"}, inplace=True)
-            task_fixed_terr_zones['geometry'] = task_fixed_terr_zones['geometry'].apply(
-                lambda fix_p: nearest_points(fix_p, zone_polygon.buffer(-0.1, resolution=1))[1])
+            task_fixed_terr_zones["geometry"] = task_fixed_terr_zones["geometry"].apply(
+                lambda fix_p: nearest_points(fix_p, zone_polygon.buffer(-0.1, resolution=1))[1]
+            )
             # task_fixed_terr_zones = None
             new_tasks.append(
                 (feature2terr_zones_initial, (task_gdf, task_func_zone, split_further, task_fixed_terr_zones), kwargs)

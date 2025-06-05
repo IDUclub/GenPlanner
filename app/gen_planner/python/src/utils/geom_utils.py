@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats.qmc import PoissonDisk
 from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
-from shapely.ops import polygonize, unary_union
+from shapely.ops import polygonize, unary_union, nearest_points
 
 
 def rotate_poly(poly: Polygon | MultiPolygon, pivot_point, angle_rad) -> Polygon | MultiPolygon:
@@ -18,8 +18,7 @@ def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
     gdf = gdf.copy()
     multip = gpd.GeoDataFrame(geometry=[gdf.union_all()], crs=gdf.crs).explode(ignore_index=True)
     max_dist = (
-            np.ceil(
-                multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0)) + 0.1
+        np.ceil(multip.apply(lambda row: multip.drop(row.name).distance(row.geometry).min(), axis=1).max(axis=0)) + 0.1
     )
     if pd.isna(max_dist):
         max_dist = 1
@@ -90,7 +89,7 @@ def generate_points(area_to_fill: Polygon, radius):
     height = max_y - min_y
     norm_radius = radius / max(width, height)
     engine = PoissonDisk(d=2, radius=norm_radius)
-    points = engine.random(int((1 // (math.pi * radius ** 2)) * bbox.area * 10))
+    points = engine.random(int((1 // (math.pi * radius**2)) * bbox.area * 10))
     points_in_polygon = np.array([point for point in points])
     return points_in_polygon
 
@@ -123,8 +122,9 @@ def explode_linestring(geometry: LineString) -> list[LineString]:
     return result
 
 
-def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame | list[gpd.GeoDataFrame],
-                       return_splitters=False) -> gpd.GeoDataFrame:
+def territory_splitter(
+    gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame | list[gpd.GeoDataFrame], return_splitters=False
+) -> gpd.GeoDataFrame:
     original_crs = gdf_to_split.crs
     local_crs = gdf_to_split.estimate_utm_crs()
     gdf_to_split = gdf_to_split.to_crs(local_crs)
@@ -153,5 +153,26 @@ def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFra
     polygons.drop(index=to_kick, inplace=True)
     polygons = polygons[polygons.area >= 1]
     if not return_splitters:
-        return polygons[~polygons['is_splitter']].to_crs(original_crs).drop(columns=["is_splitter"])
+        return polygons[~polygons["is_splitter"]].to_crs(original_crs).drop(columns=["is_splitter"])
     return polygons.to_crs(original_crs)
+
+
+def patch_polygon_interior(polygon: Polygon) -> Polygon:
+    if not polygon.interiors:
+        return polygon
+
+    buffered_poly_w_holes = polygon.buffer(0.1)
+
+    lines = [
+        LineString(nearest_points(hole, buffered_poly_w_holes.exterior)).buffer(0.1, resolution=1).exterior
+        for hole in buffered_poly_w_holes.interiors
+    ]
+
+    polygons = list(polygonize(unary_union([geometry_to_multilinestring(polygon)] + lines)))
+
+    repr_point = polygon.representative_point()
+    for poly in polygons:
+        if poly.contains(repr_point):
+            return poly
+
+    return polygon
