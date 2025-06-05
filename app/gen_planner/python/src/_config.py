@@ -16,7 +16,7 @@ class Config:
         8: 0.12,
     }
 
-    roads_width_def = {"high speed highway": 30, "regulated highway": 20, "local road": 5}
+    roads_width_def = {"high speed highway": 20, "regulated highway": 10, "local road": 2.5}
 
     def __init__(
         self,

@@ -8,4 +8,5 @@ from .geom_utils import (
     elastic_wrap,
     rotate_poly,
     territory_splitter,
+    explode_linestring
 )

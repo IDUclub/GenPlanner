@@ -1,26 +1,25 @@
 import concurrent.futures
 import multiprocessing
 import time
-from typing import Literal
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
 from loguru import logger
-from pyproj import CRS, Transformer
-from shapely import Point
+from pyproj import CRS
 from shapely.geometry import MultiPolygon, Polygon
 from shapely.ops import polygonize
 
+from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.tasks import (
     feature2terr_zones_initial,
     multi_feature2terr_zones_initial,
     multi_feature2blocks_initial,
     gdf_splitter,
-    poly2func2terr2block_initial,
 )
-from app.gen_planner.python.src.utils import geometry_to_multilinestring
-from app.gen_planner.python.src.zoning import FuncZone, GenPlan, TerritoryZone, basic_func_zone, gen_plan
+from app.gen_planner.python.src.utils import geometry_to_multilinestring, territory_splitter, explode_linestring
+from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone, basic_func_zone
+
+roads_width_def = config.roads_width_def.copy()
 
 
 class GenPlanner:
@@ -29,45 +28,53 @@ class GenPlanner:
 
     territory_to_work_with: gpd.GeoDataFrame
     local_crs: CRS
-    angle_rad_to_rotate: float | Literal["auto"]
+    user_valid_roads: gpd.GeoDataFrame
+    # angle_rad_to_rotate: float | Literal["auto"]
     source_multipolygon: bool = False
 
     # geometry_transformer4326: Transformer
     dev_mod: bool = False
 
     def __init__(
-        self,
-        features: gpd.GeoDataFrame,
-        rotation: bool = True,
-        rotation_angle: float | Literal["auto"] = "auto",
-        **kwargs,
+            self,
+            features: gpd.GeoDataFrame,
+            roads: gpd.GeoDataFrame = None,
+            **kwargs,
     ):
         features.reset_index(names="new_node_index")
-        self._create_working_gdf(features.copy())
-        if rotation:
-            self.rotation = True
-            if rotation_angle != "auto":
-                self.angle_rad_to_rotate = np.deg2rad(rotation)
-            else:
-                self.angle_rad_to_rotate = rotation_angle
-        else:
-            self.rotation = False
+        if roads is None:
+            roads = gpd.GeoDataFrame()
+        self._create_working_gdf(features.copy(), roads.copy())
         if "dev_mod" in kwargs:
             self.dev_mod = True
             logger.info("Dev mod activated, no more ProcessPool")
 
-    def _create_working_gdf(self, gdf: gpd.GeoDataFrame) -> Polygon | MultiPolygon:
+    def _create_working_gdf(self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame) -> Polygon | MultiPolygon:
         self.original_territory = gdf.copy()
         self.original_crs = gdf.crs
         self.local_crs = gdf.estimate_utm_crs()
         gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
-
         if len(gdf) == 0:
             raise TypeError("No valid geometries in provided GeoDataFrame")
-        gdf = gdf.to_crs(self.local_crs).explode(index_parts=False)
+        gdf = gdf.to_crs(self.local_crs)
+        roads = roads.to_crs(self.local_crs)
+        if len(roads) > 0:
+            gdf = territory_splitter(gdf, roads, return_splitters=False)
+            splitters_lines = gpd.GeoDataFrame(geometry=pd.Series(
+                gdf.geometry.apply(geometry_to_multilinestring).explode().apply(
+                    explode_linestring)).explode(ignore_index=True), crs=gdf.crs)
+            splitters_lines.geometry = splitters_lines.geometry.centroid.buffer(.1, resolution=1)
+            roads = roads.sjoin(splitters_lines, how="inner", predicate="intersects")
+            roads = roads[~roads.index.duplicated(keep=False)]
+            local_road_width = roads_width_def.get('local road')
+            if "width" not in roads.columns:
+                roads["width"] = local_road_width
+            roads['width'] = roads['width'].fillna(local_road_width)
+            roads["road_lvl"] = 'user_roads'
 
+        self.user_valid_roads = roads
         self.source_multipolygon = False if len(gdf) == 1 else True
-        self.territory_to_work_with = gdf.to_crs(self.local_crs)
+        self.territory_to_work_with = gdf
 
     def _run(self, initial_func, *args, **kwargs):
         task_queue = multiprocessing.Queue()
@@ -121,7 +128,8 @@ class GenPlanner:
         return fixed_zones
 
     def split_features(
-        self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None, fixed_zones: gpd.GeoDataFrame = None
+            self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None,
+            fixed_zones: gpd.GeoDataFrame = None
     ):
         """
         Splits every feature in working gdf according to provided zones_ratio_dict or zones_n
@@ -154,17 +162,17 @@ class GenPlanner:
         return self._run(multi_feature2blocks_initial, self.territory_to_work_with)
 
     def features2terr_zones(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=False)
 
     def features2terr_zones2blocks(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=True)
 
     def _features2terr_zones(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
 
         if fixed_terr_zones is not None:
@@ -192,7 +200,7 @@ class GenPlanner:
 
 
 def parallel_split_queue(
-    task_queue: multiprocessing.Queue, local_crs, dev=False
+        task_queue: multiprocessing.Queue, local_crs, dev=False
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
     splitted = []
     roads_all = []

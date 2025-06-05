@@ -116,13 +116,20 @@ def geometry_to_multilinestring(geom):
     return LineString()
 
 
+def explode_linestring(geometry: LineString) -> list[LineString]:
+    """A function to return all segments of a linestring as a list of linestrings"""
+    coords_ext = geometry.coords  # Create a list of all line node coordinates
+    result = [LineString(part) for part in zip(coords_ext, coords_ext[1:])]
+    return result
+
+
 def territory_splitter(gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame | list[gpd.GeoDataFrame],
                        return_splitters=False) -> gpd.GeoDataFrame:
     original_crs = gdf_to_split.crs
     local_crs = gdf_to_split.estimate_utm_crs()
     gdf_to_split = gdf_to_split.to_crs(local_crs)
     if isinstance(splitters, list):
-        splitters = pd.concat(splitters,ignore_index=True)
+        splitters = pd.concat(splitters, ignore_index=True)
     splitters = splitters.to_crs(local_crs)
     lines_orig = gdf_to_split.geometry.apply(geometry_to_multilinestring).to_list()
     lines_splitters = splitters.geometry.apply(geometry_to_multilinestring).to_list()
