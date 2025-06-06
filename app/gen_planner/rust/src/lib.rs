@@ -1,11 +1,8 @@
 mod loss_topo;
-
 use del_candle::voronoi2::VoronoiInfo;
 use del_canvas_core::canvas_gif::Canvas;
 use pyo3::prelude::*;
-
 use std::panic;
-use std::backtrace::Backtrace;
 
 #[pyfunction]
 fn optimize_space(
@@ -15,7 +12,7 @@ fn optimize_space(
     site2xy2flag: Vec<f32>,
     room2area_trg: Vec<f32>,
     room_connections: Vec<(usize, usize)>,
-    create_gif: bool,
+    dev: bool,
 ) -> PyResult<(Vec<usize>, Vec<usize>, Vec<f32>, Vec<usize>)> {
     let result = panic::catch_unwind(|| {
         optimize(
@@ -25,31 +22,34 @@ fn optimize_space(
             site2xy2flag,
             room2area_trg,
             room_connections,
-            create_gif,
+            dev,
         )
     });
     match result {
         Ok(Ok(value)) => Ok(value),
-        Ok(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string())),
-        Err(_) => {
-            // Ловим панику и получаем стектрейс
-            let backtrace = Backtrace::force_capture();
-            let panic_message = format!(
-                "A panic occurred in the Rust code.\n\nBacktrace:\n{:?}",
-                backtrace
-            );
-            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(panic_message))
+        Ok(Err(e)) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            e.to_string(),
+        )),
+        Err(panic_info) => {
+            let panic_message = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "Unknown panic occurred".to_string()
+            };
+            Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                panic_message,
+            ))
         }
     }
 }
-
 
 #[pymodule]
 fn rust_optimizer(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize_space, m)?)?;
     Ok(())
 }
-
 
 pub fn my_paint(
     canvas: &mut Canvas,
@@ -77,16 +77,22 @@ pub fn my_paint(
         };
         //
         let num_vtx_in_site = site2idx[i_site + 1] - site2idx[i_site];
-        if num_vtx_in_site == 0 { continue; }
-        let mut vtx2xy = vec!(0f32; num_vtx_in_site * 2);
+        if num_vtx_in_site == 0 {
+            continue;
+        }
+        let mut vtx2xy = vec![0f32; num_vtx_in_site * 2];
         for i_vtx in 0..num_vtx_in_site {
             let i_vtxv = idx2vtxv[site2idx[i_site] + i_vtx];
             vtx2xy[i_vtx * 2 + 0] = vtxv2xy[i_vtxv * 2 + 0];
             vtx2xy[i_vtx * 2 + 1] = vtxv2xy[i_vtxv * 2 + 1];
         }
         del_canvas_core::rasterize_polygon::fill(
-            &mut canvas.data, canvas.width,
-            &vtx2xy, arrayref::array_ref![transform_to_scr.as_slice(),0,9], i_color)
+            &mut canvas.data,
+            canvas.width,
+            &vtx2xy,
+            arrayref::array_ref![transform_to_scr.as_slice(), 0, 9],
+            i_color,
+        )
     }
     // draw points;
     for i_site in 0..site2xy.len() / 2 {
@@ -103,7 +109,7 @@ pub fn my_paint(
             &mut canvas.data,
             canvas.width,
             &[site2xy[i_site * 2 + 0], site2xy[i_site * 2 + 1]],
-            arrayref::array_ref![transform_to_scr.as_slice(),0,9],
+            arrayref::array_ref![transform_to_scr.as_slice(), 0, 9],
             2.0,
             1,
         );
@@ -120,7 +126,7 @@ pub fn my_paint(
                 canvas.width,
                 &[vtxv2xy[i0 * 2 + 0], vtxv2xy[i0 * 2 + 1]],
                 &[vtxv2xy[i1 * 2 + 0], vtxv2xy[i1 * 2 + 1]],
-                arrayref::array_ref![transform_to_scr.as_slice(),0,9],
+                arrayref::array_ref![transform_to_scr.as_slice(), 0, 9],
                 1,
             );
         }
@@ -143,7 +149,7 @@ pub fn my_paint(
         &mut canvas.data,
         canvas.width,
         &vtxl2xy,
-        arrayref::array_ref![transform_to_scr.as_slice(),0,9],
+        arrayref::array_ref![transform_to_scr.as_slice(), 0, 9],
         1.1,
         1,
     );
@@ -196,7 +202,7 @@ pub fn room2area(
     };
     let site2areas = vtxv2xy.apply_op1(polygonmesh2_to_areas)?;
     let site2areas = site2areas.reshape((site2areas.dim(0).unwrap(), 1))?; // change shape to use .mutmul()
-    //
+                                                                           //
     let num_site = site2room.len();
     let sum_sites_for_rooms = {
         let mut sum_sites_for_rooms = vec![0f32; num_site * num_room];
@@ -223,24 +229,52 @@ pub fn optimize(
     site2xy2flag: Vec<f32>,
     room2area_trg: Vec<f32>,
     room_connections: Vec<(usize, usize)>,
-    create_gif: bool)
-    -> anyhow::Result<(Vec<usize>, Vec<usize>, Vec<f32>, Vec<usize>)>
-{
+    dev: bool,
+) -> anyhow::Result<(Vec<usize>, Vec<usize>, Vec<f32>, Vec<usize>)> {
     let mut final_vtxv2xy = Vec::new();
     let mut final_site2idx = Vec::new();
     let mut final_idx2vtxv = Vec::new();
     let mut final_edge2vtxv_wall = Vec::new();
 
+    let fixed_flags = site2xy2flag.iter().filter(|&&x| x != 0.0).count();
 
-    let room2color = vec![15390321, 16185205, 15171426, 6527726];
+    let num_room = room2area_trg.len();
+    let num_sites = site2room.len();
+    let mut room2fixed_sites: Vec<Vec<(f32, f32)>> = vec![vec![]; num_room];
+
+    for i_site in 0..num_sites {
+        let room_idx = site2room[i_site];
+        let x_flag = site2xy2flag[i_site * 2];
+        let y_flag = site2xy2flag[i_site * 2 + 1];
+
+        if x_flag != 0.0 || y_flag != 0.0 {
+            let x = site2xy[i_site * 2];
+            let y = site2xy[i_site * 2 + 1];
+            room2fixed_sites[room_idx].push((x, y));
+        }
+    }
+    // for (i, points) in room2fixed_sites.iter().enumerate() {
+    //     println!("Room {i} has {} fixed point(s): {:?}", points.len(), points);
+    // }
+
+    let room2color = vec![
+        0xffe766, // residential жёлтый
+        0xffba66, // business оранжевый
+        0xcdff82, // recreation-светло-зелёный
+        0xcbcbcb, // transport-серый
+        0xb98f71, // special-коричневый
+        0x79d0cc, // agriculture
+        0x9e94de, // industrial-синий в фиолетовый
+        0xF8B7D8, // Пастельно-розовый (вместо пурпурного)
+    ];
     let gif_size = (500, 500);
-    let mut canvas_gif = if create_gif {
+    let mut canvas_gif = if dev {
         let num_room = room2area_trg.len();
         let mut palette = vec![0xffffff, 0x000000];
         for i_room in 0..num_room {
             palette.push(room2color[i_room]);
         }
-        Some(Canvas::new("./test.gif", gif_size, &palette))
+        Some(Canvas::new("./rust_data/test.gif", gif_size, &palette))
     } else {
         None
     };
@@ -262,17 +296,20 @@ pub fn optimize(
         &site2xy,
         candle_core::Shape::from((site2xy.len() / 2, 2)),
         &candle_core::Device::Cpu,
-    ).unwrap();
+    )
+    .unwrap();
     let site2xy2flag = candle_core::Var::from_slice(
         &site2xy2flag,
         candle_core::Shape::from((site2xy2flag.len() / 2, 2)),
         &candle_core::Device::Cpu,
-    ).unwrap();
+    )
+    .unwrap();
     let site2xy_ini = candle_core::Tensor::from_vec(
         site2xy.flatten_all().unwrap().to_vec1::<f32>()?,
         candle_core::Shape::from((site2xy.dims2()?.0, 2)),
         &candle_core::Device::Cpu,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(site2room.len(), site2xy.dims2()?.0);
     //
     let room2area_trg = {
@@ -282,34 +319,50 @@ pub fn optimize(
             candle_core::Shape::from((num_room, 1)),
             &candle_core::Device::Cpu,
         )
-            .unwrap()
+        .unwrap()
     };
     let adamw_params = candle_nn::ParamsAdamW {
-        lr: 0.05,
+        lr: 0.2,
         ..Default::default()
     };
-    use candle_nn::Optimizer;
-    use std::time::Instant;
 
+    use candle_nn::Optimizer;
     let mut optimizer = candle_nn::AdamW::new(vec![site2xy.clone()], adamw_params)?;
-    let n_iter = 250;
+    let n_sites = site2room.len();
+    let base_iter = 150;
+    let max_iter = 400;
+    let mut n_iter = base_iter + ((n_sites.saturating_sub(10) * (max_iter - base_iter)) / 50);
+
+    if fixed_flags > 0 {
+        n_iter = (n_iter as f32 * 1.1).round() as usize;
+    }
+
+    let max_lr = 0.08;
+    let min_lr = 0.002;
+    let decay_start = n_iter / 3;
+
     for _iter in 0..n_iter {
-        if _iter == 150 {
-            let adamw_params = candle_nn::ParamsAdamW {
-                lr: 0.005,
-                ..Default::default()
-            };
-            optimizer.set_params(adamw_params);
-        }
-        let (vtxv2xy, voronoi_info)
-            = del_candle::voronoi2::voronoi(&vtxl2xy, &site2xy, |i_site| {
+        let current_lr = if _iter < decay_start {
+            max_lr
+        } else {
+            let decay_progress = (_iter - decay_start) as f32 / (n_iter - decay_start) as f32;
+            min_lr
+                + 0.5 * (max_lr - min_lr) * (1.0 + f32::cos(std::f32::consts::PI * decay_progress))
+        };
+
+        optimizer.set_params(candle_nn::ParamsAdamW {
+            lr: current_lr as f64,
+            beta2: 0.95,
+            ..Default::default()
+        });
+
+        let (vtxv2xy, voronoi_info) = del_candle::voronoi2::voronoi(&vtxl2xy, &site2xy, |i_site| {
             site2room[i_site] != usize::MAX
         });
-        let edge2vtxv_wall = crate::edge2vtvx_wall(&voronoi_info, &site2room);
+        let edge2vtxv_wall = edge2vtvx_wall(&voronoi_info, &site2room);
 
-        // let loss_lloyd_internal = floorplan::loss_lloyd_internal(&voronoi_info, &site2room, &site2xy, &vtxv2xy)?;
         let (loss_each_area, loss_total_area) = {
-            let room2area = crate::room2area(
+            let room2area = room2area(
                 &site2room,
                 room2area_trg.dims2()?.0,
                 &voronoi_info.site2idx,
@@ -342,61 +395,82 @@ pub fn optimize(
                 edge2vtx: Vec::<usize>::from(edge2vtxv_wall.clone()),
             };
             let edge2xy = vtxv2xy.apply_op1(vtx2xyz_to_edgevector)?;
+            // edge2xy.abs()?.affine(1.0,1.0)?.sqr()?.sum_all()?
             edge2xy.abs()?.sum_all()?
-            //edge2xy.sqr()?.sum_all()?
         };
-        let loss_topo = loss_topo::unidirectional(
+        let loss_topo = loss_topo::compute_topo_loss(
             &site2xy,
             &site2room,
             room2area_trg.dims2()?.0,
             &voronoi_info,
             &room_connections,
         )?;
+
+        let loss_group_fix =
+            loss_topo::compute_group_fix_loss(&site2xy, &room2fixed_sites, &site2room)?;
         // println!("  loss topo: {}", loss_topo.to_vec0::<f32>()?);
-        //let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
-        //let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
-        let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sqr()?.sum_all()?;
+        // let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
+        // let loss_fix = site2xy.sub(&site2xy_ini)?.mul(&site2xy2flag)?.sum_all()?;
+
+        let loss_fix = site2xy
+            .sub(&site2xy_ini)?
+            .mul(&site2xy2flag)?
+            .sqr()?
+            .sqr()?
+            .sum_all()?;
+
         let loss_lloyd = del_candle::voronoi2::loss_lloyd(
-            &voronoi_info.site2idx, &voronoi_info.idx2vtxv,
-            &site2xy, &vtxv2xy)?;
-        // dbg!(loss_fix.to_vec0::<f32>()?);
-        // ---------
-        /*
-        let loss_each_area = if _iter > 150 {
-            loss_each_area.affine(5.0, 0.0)?.clone()
-        }
-        else {
-        };
-         */
-        let loss_each_area = loss_each_area.affine(15.0, 0.0)?.clone();
-        let loss_total_area = loss_total_area.affine(10.0, 0.0)?.clone();
-        let loss_walllen = loss_walllen.affine(0.02, 0.0)?;
-        let loss_topo = loss_topo.affine(1., 0.0)?;
-        let loss_fix = loss_fix.affine(100., 0.0)?;
-        let loss_lloyd = loss_lloyd.affine(0.2, 0.0)?;
-        // dbg!(loss_fix.flatten_all()?.to_vec1::<f32>());
-        /*
-        {
-            let mut file = std::fs::OpenOptions::new().write(true).append(true).open("target/conv.csv")?;
-            let mut writer = std::io::BufWriter::new(&file);
-            writeln!(&mut writer, "{}, {},{},{},{},{}",
-                     _iter,
-                     (loss_each_area.clone() + loss_total_area.clone())?.to_vec0::<f32>()?,
-                     loss_walllen.clone().to_vec0::<f32>()?,
-                     loss_topo.clone().to_vec0::<f32>()?,
-                     loss_fix.clone().to_vec0::<f32>()?,
-                     loss_lloyd.clone().to_vec0::<f32>()?,
-            );
-        }
-         */
-        let loss = (
-            loss_each_area
-                + loss_total_area
-                + loss_walllen
-                + loss_topo
-                + loss_fix
-                + loss_lloyd
+            &voronoi_info.site2idx,
+            &voronoi_info.idx2vtxv,
+            &site2xy,
+            &vtxv2xy,
         )?;
+
+        let loss_each_area = loss_each_area.affine(50000.0, 0.0)?.clone();
+        let loss_total_area = loss_total_area.affine(100000.0, 0.0)?.clone();
+        let loss_walllen = loss_walllen.affine(50.0, 0.0)?;
+        let loss_topo = loss_topo.affine(150.0, 0.0)?;
+        let loss_fix = loss_fix.affine(10000000., 0.0)?;
+        let loss_lloyd = loss_lloyd.affine(120.0, 0.0)?;
+
+        let loss_group_fix = loss_group_fix.affine(80.0, 0.0)?;
+        // dbg!(loss_fix.flatten_all()?.to_vec1::<f32>());
+
+        // let loss_fix_topo = loss_fix.mul(&loss_topo)?.affine(0.01, 0.)?;
+        if dev {
+            {
+                use std::io::Write;
+                let file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .create(true)
+                    .open("./rust_data/conv.csv")?;
+                let mut writer = std::io::BufWriter::new(&file);
+                writeln!(
+                    &mut writer,
+                    "{}, {},{},{},{},{},{},{},{}",
+                    _iter,
+                    loss_each_area.clone().to_vec0::<f32>()?,
+                    loss_total_area.clone().to_vec0::<f32>()?,
+                    loss_walllen.clone().to_vec0::<f32>()?,
+                    loss_topo.clone().to_vec0::<f32>()?,
+                    loss_fix.clone().to_vec0::<f32>()?,
+                    loss_lloyd.clone().to_vec0::<f32>()?,
+                    loss_group_fix.clone().to_vec0::<f32>()?,
+                    current_lr,
+                )
+                .expect("TODO: panic message");
+            }
+        }
+
+        let loss = (loss_each_area
+            + loss_total_area
+            + loss_walllen
+            + loss_topo
+            + loss_fix
+            + loss_lloyd
+            + loss_group_fix)?;
+
         // println!("  loss: {}", loss.to_vec0::<f32>()?);
         optimizer.backward_step(&loss)?;
         // ----------------
@@ -422,5 +496,10 @@ pub fn optimize(
             final_edge2vtxv_wall = edge2vtxv_wall.clone();
         }
     }
-    Ok((final_site2idx, final_idx2vtxv, final_vtxv2xy, final_edge2vtxv_wall))
+    Ok((
+        final_site2idx,
+        final_idx2vtxv,
+        final_vtxv2xy,
+        final_edge2vtxv_wall,
+    ))
 }

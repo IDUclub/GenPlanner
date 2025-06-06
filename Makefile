@@ -1,4 +1,4 @@
-CODE := src/block_generator
+CODE := app
 
 build-and-publish: clean build publish
 
@@ -31,4 +31,4 @@ update:
 	poetry update
 
 build_dev_rust:
-	cd gen_planner/rust && poetry run maturin develop
+	cd app/gen_planner/rust && poetry run maturin develop -r

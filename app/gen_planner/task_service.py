@@ -1,26 +1,28 @@
 import json
-from typing import Literal
 from asyncio.queues import Queue
+from typing import Literal
+
 from loguru import logger
 
 from app.common.config.config import config
 from app.common.exceptions.http_exception import http_exception
+
 from .python.src.genplanner import GenPlanner
 from .python.src.zoning.standart_implement import FuncZone, basic_func_zone
 
-
 task_queue = Queue()
 task_map = {}
+
 
 class Task:
     """This class describes task object parametres for queue"""
 
     def __init__(
-            self,
-            task_id: str,
-            processor: GenPlanner,
-            scenario: FuncZone = basic_func_zone,
-            total_generations: int = 5,
+        self,
+        task_id: str,
+        processor: GenPlanner,
+        scenario: FuncZone = basic_func_zone,
+        total_generations: int = 5,
     ) -> None:
         """Task class initialisation function"""
 
@@ -49,9 +51,7 @@ class Task:
     def add_result(self, result: dict) -> None:
         self.task_results.append(result)
 
-    async def get_result(
-            self
-    ) -> dict[str, list[dict] | float | str] | dict[str, str | float]:
+    async def get_result(self) -> dict[str, list[dict] | float | str] | dict[str, str | float]:
         """
         Get available task results from task service queue
 
@@ -94,9 +94,7 @@ class Task:
                     "errors": self.errors,
                 }
 
-    def run_generations(
-            self
-    ) -> None:
+    def run_generations(self) -> None:
 
         logger.info(f"Starting generation {self.current_generation}")
         self.status = "running"
