@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse, FileResponse
 from loguru import logger
 
 from app.common.config.config import config
-from app.gen_planner.task_service import task_queue
+# from app.gen_planner.task_service import task_queue
 from app.gen_planner.gen_planner_controller import gen_planner_router
 from app.common.exceptions.http_exception import http_exception
 
@@ -27,25 +27,25 @@ logger.add(
 )
 
 
-async def process_tasks() -> None:
-    """Function for processing task from async queue"""
+# async def process_tasks() -> None:
+#     """Function for processing task from async queue"""
+#
+#     while True:
+#         task = await task_queue.get()
+#         await asyncio.to_thread(task.run_generations)
+#         task_queue.task_done()
+#         await asyncio.sleep(1)
+#
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     """
+#     Lifespan function for task creation and processing
+#     """
+#
+#     asyncio.create_task(process_tasks(), name="plan_generation")
+#     yield
 
-    while True:
-        task = await task_queue.get()
-        await asyncio.to_thread(task.run_generations)
-        task_queue.task_done()
-        await asyncio.sleep(1)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """
-    Lifespan function for task creation and processing
-    """
-
-    asyncio.create_task(process_tasks(), name="plan_generation")
-    yield
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 origins = ["*"]
 

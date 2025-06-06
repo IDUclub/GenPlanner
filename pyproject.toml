@@ -39,6 +39,7 @@ contextily = "^1.6.2"
 folium = "^0.19.5"
 matplotlib = "^3.10.1"
 mapclassify = "^2.8.1"
+pre-commit = "^4.2.0"
 
 [build-system]
 requires = ["poetry-core"]

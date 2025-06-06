@@ -18,6 +18,7 @@ class GenPlannerDTO(BaseModel):
         default=None, examples=[example_territory], description="The territory polygon"
     )
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
+    scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
     territory: Optional[FeatureCollection] = Field(default=None, description="The territory geometry")
 
     @model_validator(mode="after")
@@ -49,8 +50,6 @@ class GenPlannerDTO(BaseModel):
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):
 
-    project_id: int = Field(..., examples=[72], description="The project ID")
-    scenario: Literal[8, 1, 4, 7, 2, 6, 5, 3] | int = Field(..., description="Scenario func zone type")
     profile_scenario: int = Field(..., description="Scenario func zone type")
 
     @field_validator("profile_scenario", mode="before")

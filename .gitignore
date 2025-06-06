@@ -12,3 +12,4 @@ idea
 target
 *.env.*
 *.log
+*.ipynb

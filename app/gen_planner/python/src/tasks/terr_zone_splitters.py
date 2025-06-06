@@ -96,7 +96,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             fixed_terr_zones, left_on="zone_name", right_on="fixed_zone", how="left", suffixes=("", "_fixed")
         )
         proxy_fix_points["geometry"] = proxy_fix_points["geometry_fixed"].combine_first(proxy_fix_points["geometry"])
-        proxy_fix_points = proxy_fix_points.drop(columns=["geometry_fixed", "fixed_zone", "ratio"])
+        proxy_fix_points = proxy_fix_points.drop(columns=["geometry_fixed", "fixed_zone"])
 
     lines_orig = initial_gdf.geometry.apply(geometry_to_multilinestring).to_list()
     lines_new = proxy_zones.geometry.apply(geometry_to_multilinestring).to_list()
