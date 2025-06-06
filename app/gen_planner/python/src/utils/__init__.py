@@ -4,5 +4,10 @@ from .geom_utils import (
     normalize_coords,
     denormalize_coords,
     generate_points,
-    polygons_to_linestring,
+    geometry_to_multilinestring,
+    elastic_wrap,
+    rotate_poly,
+    territory_splitter,
+    explode_linestring,
+    patch_polygon_interior,
 )

@@ -5,15 +5,20 @@ from pydantic import BaseModel, Field, field_validator, model_validator, validat
 
 from app.common.geometries import FeatureCollection
 from app.common.exceptions.http_exception import http_exception
+from app.common.geometries import Geometry
 
 
 with open("app/common/example_geometry.json") as et:
-    example_territory =json.load(et)
+    example_territory = json.load(et)
 
 
 class GenPlannerDTO(BaseModel):
 
+    territory: Optional[Geometry] = Field(
+        default=None, examples=[example_territory], description="The territory polygon"
+    )
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
+    scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
     territory: Optional[FeatureCollection] = Field(default=None, description="The territory geometry")
 
     @model_validator(mode="after")

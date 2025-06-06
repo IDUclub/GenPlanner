@@ -1,1 +1,9 @@
-from .standart_implement import residential_terr, industrial_terr, business_terr, recreation_terr, transport_terr, agriculture_terr, special_terr
+from .terr_zones import (
+    agriculture_terr,
+    business_terr,
+    industrial_terr,
+    recreation_terr,
+    residential_terr,
+    special_terr,
+    transport_terr,
+)
