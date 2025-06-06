@@ -172,7 +172,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             allocations.append((i, z, round(val, 2)))
     del x, y
     allocations = pd.DataFrame(allocations, columns=["zone_index", "territorial_zone", "assigned_area"])
-    kwargs.update({"func_zone": func_zone.name})
+    kwargs.update({"func_zone": func_zone})
 
     ready_for_blocks = []
     new_tasks = []
@@ -302,7 +302,7 @@ def feature2terr_zones_initial(task, **kwargs):
         return {"generation": zones, "generated_roads": roads}
 
     # if split further
-    kwargs.update({"func_zone": func_zone.name})
+    kwargs.update({"func_zone": func_zone})
     zones["territory_zone"] = zones["zone_name"]
     task = [(multi_feature2blocks_initial, (zones,), kwargs)]
     return {"new_tasks": task, "generated_roads": roads}

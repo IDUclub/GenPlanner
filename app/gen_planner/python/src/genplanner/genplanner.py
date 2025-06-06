@@ -39,11 +39,11 @@ class GenPlanner:
     dev_mod: bool = False
 
     def __init__(
-        self,
-        features: gpd.GeoDataFrame,
-        roads: gpd.GeoDataFrame = None,
-        exclude_features: gpd.GeoDataFrame = None,
-        **kwargs,
+            self,
+            features: gpd.GeoDataFrame,
+            roads: gpd.GeoDataFrame = None,
+            exclude_features: gpd.GeoDataFrame = None,
+            **kwargs,
     ):
         self.original_territory = features.copy()
         self.original_crs = features.crs
@@ -59,7 +59,7 @@ class GenPlanner:
             logger.info("Dev mod activated, no more ProcessPool")
 
     def _create_working_gdf(
-        self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame, exclude_features: gpd.GeoDataFrame
+            self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame, exclude_features: gpd.GeoDataFrame
     ) -> Polygon | MultiPolygon:
 
         gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
@@ -155,7 +155,8 @@ class GenPlanner:
         return fixed_zones
 
     def split_features(
-        self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None, fixed_zones: gpd.GeoDataFrame = None
+            self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None,
+            fixed_zones: gpd.GeoDataFrame = None
     ):
         """
         Splits every feature in working gdf according to provided zones_ratio_dict or zones_n
@@ -188,19 +189,20 @@ class GenPlanner:
         return self._run(multi_feature2blocks_initial, self.territory_to_work_with)
 
     def features2terr_zones(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=False)
 
     def features2terr_zones2blocks(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=True)
 
     def _features2terr_zones(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
-
+        if not isinstance(funczone, FuncZone):
+            raise TypeError("funczone arg must be of type FuncZone")
         if fixed_terr_zones is not None:
             fixed_terr_zones = self._check_fixed_zones(funczone.zones_ratio, fixed_terr_zones)
 
@@ -226,7 +228,7 @@ class GenPlanner:
 
 
 def parallel_split_queue(
-    task_queue: multiprocessing.Queue, local_crs, dev=False
+        task_queue: multiprocessing.Queue, local_crs, dev=False
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
     splitted = []
     roads_all = []
