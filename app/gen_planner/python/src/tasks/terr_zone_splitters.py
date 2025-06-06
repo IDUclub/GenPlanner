@@ -208,15 +208,20 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             new_tasks.append(
                 (feature2terr_zones_initial, (task_gdf, task_func_zone, split_further, task_fixed_terr_zones), kwargs)
             )
-    block_splitter_gdf = pd.concat(ready_for_blocks)
+    if len(ready_for_blocks) > 0:
+        block_splitter_gdf = pd.concat(ready_for_blocks)
+    else:
+        block_splitter_gdf = gpd.GeoDataFrame()
 
     if split_further:
-        new_tasks.append((multi_feature2blocks_initial, (block_splitter_gdf,), kwargs))
+        if len(block_splitter_gdf) > 0:
+            new_tasks.append((multi_feature2blocks_initial, (block_splitter_gdf,), kwargs))
         return {"new_tasks": new_tasks}
 
         # return {"new_tasks": new_tasks,"generation":proxy_generation}
     else:
-        block_splitter_gdf["func_zone"] = func_zone
+        if len(block_splitter_gdf) > 0:
+            block_splitter_gdf["func_zone"] = func_zone
         # block_splitter_gdf["territory_zone"] = block_splitter_gdf["territory_zone"].apply(lambda x: x.name)
         return {"new_tasks": new_tasks, "generation": block_splitter_gdf}
 
