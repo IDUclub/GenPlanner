@@ -1,7 +1,8 @@
 import json
 
-from typing import Literal, Optional, Self
-from pydantic import BaseModel, Field, field_validator, model_validator, validator
+from typing import Optional, Self
+from pydantic import BaseModel, Field, field_validator, model_validator
+import geopandas as gpd
 
 from app.common.geometries import FeatureCollection
 from app.common.exceptions.http_exception import http_exception
@@ -20,6 +21,7 @@ class GenPlannerDTO(BaseModel):
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
     scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
     territory: Optional[FeatureCollection] = Field(default=None, description="The territory geometry")
+    fix_zones: Optional[FeatureCollection] = Field(default=None, description="The fix zone geometry")
 
     @model_validator(mode="after")
     def validate_territory(self) -> Self:
@@ -46,6 +48,14 @@ class GenPlannerDTO(BaseModel):
             )
         else:
             return self
+
+    @field_validator(mode="before")
+    @classmethod
+    def validate_fix_zones(cls, fix_zones: FeatureCollection):
+
+        try:
+            fix_zones_gdf = gpd.GeoDataFrame.from_features(fix_zones,crs=4326)
+            if "" not in fix_zones_gdf.columns:
 
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):

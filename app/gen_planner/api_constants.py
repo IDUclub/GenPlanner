@@ -29,5 +29,23 @@ scenario_ter_zones_map = {
     13: terr_zones.residential_terr,
 }
 
-print([i for i in scenario_func_zones_map])
-print([i for i in scenario_ter_zones_map])
+custom_func_zones_map_by_name = {
+    "basic": basic_func_zone,
+    "residential territory": func_zones.residential_func_zone,
+    "industrial territory": func_zones.industrial_func_zone,
+    "business territory": func_zones.business_func_zone,
+    "transport territory": func_zones.transport_func_zone,
+    "agriculture territory": func_zones.agricalture_func_zone,
+    "special territory": func_zones.special_func_zone,
+}
+
+custom_ter_zones_map_by_name = {
+    "residential": terr_zones.residential_terr,
+    "industrial": terr_zones.industrial_terr,
+    "business": terr_zones.business_terr,
+    "recreation": terr_zones.recreation_terr,
+    "transport": terr_zones.transport_terr,
+    "agriculture": terr_zones.agriculture_terr,
+    "special": terr_zones.special_terr,
+}
+
