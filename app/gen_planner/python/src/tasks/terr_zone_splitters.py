@@ -84,10 +84,11 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     )
 
     # Разворачиваем прокси зоны обратно
-    if not proxy_zones.empty:
-        proxy_zones.geometry = proxy_zones.geometry.apply(
-            lambda geom: Polygon(rotate_coords(geom.exterior.coords, pivot_point, angle_rad_to_rotate))
-        )
+    proxy_zones.geometry = proxy_zones.geometry.apply(
+        lambda geom: Polygon(rotate_coords(geom.exterior.coords, pivot_point, angle_rad_to_rotate))
+    )
+    proxy_zones['name'] = proxy_zones['zone_name'].apply(lambda x: x.name)
+    proxy_zones = proxy_zones.dissolve(by='name').reset_index(drop=True)
 
     proxy_fix_points = proxy_zones.copy()
     proxy_fix_points.geometry = proxy_fix_points.geometry.centroid
@@ -257,6 +258,7 @@ def feature2terr_zones_initial(task, **kwargs):
         fixed_terr_zones = gpd.GeoDataFrame()
 
     if len(fixed_terr_zones) > 0:
+        # TODO убрать дубликаты точек, раст падает из за них
         fixed_zones_in_poly = fixed_terr_zones[fixed_terr_zones.intersects(polygon)].copy()
         if len(fixed_zones_in_poly) > 0:
             fixed_zones_in_poly["geometry"] = fixed_zones_in_poly["geometry"].apply(
