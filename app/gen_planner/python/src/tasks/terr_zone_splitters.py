@@ -205,8 +205,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             task_fixed_terr_zones["geometry"] = task_fixed_terr_zones["geometry"].apply(
                 lambda fix_p: nearest_points(fix_p, zone_polygon.buffer(-0.1, resolution=1))[1]
             )
-            task_fixed_terr_zones = task_fixed_terr_zones[task_fixed_terr_zones["geometry"].duplicated(keep="first")]
-            # task_fixed_terr_zones = None
+            task_fixed_terr_zones = task_fixed_terr_zones[~task_fixed_terr_zones["geometry"].duplicated(keep="first")]
             new_tasks.append(
                 (feature2terr_zones_initial, (task_gdf, task_func_zone, split_further, task_fixed_terr_zones), kwargs)
             )
