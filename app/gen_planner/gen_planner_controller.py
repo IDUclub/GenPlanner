@@ -34,11 +34,11 @@ gen_planner_router = APIRouter(tags=["gen_planner"])
 
 
 def generate(
-        scenario: FuncZone | TerritoryZone,
-        func_type: Literal["ter", "zone"],
-        territory: gpd.GeoDataFrame,
-        exclude: gpd.GeoDataFrame | None,
-        project_roads: gpd.GeoDataFrame | None = None,
+    scenario: FuncZone | TerritoryZone,
+    func_type: Literal["ter", "zone"],
+    territory: gpd.GeoDataFrame,
+    exclude: gpd.GeoDataFrame | None,
+    project_roads: gpd.GeoDataFrame | None = None,
 ) -> tuple[gpd.GeoDataFrame]:
     """
     Function generates gen plan
@@ -97,7 +97,7 @@ async def get_available_zones_profiles():
 
 @gen_planner_router.post("/run_ter_generation", response_model=GenPlannerResultSchema)
 async def run_ter_territory_zones_generation(
-        params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
+    params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
 ) -> GenPlannerResultSchema:
     scenario = scenario_ter_zones_map.get(params.profile_scenario)
     if not params.scenario_id:
@@ -109,8 +109,9 @@ async def run_ter_territory_zones_generation(
         territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
     roads = await gen_planner_api_service.get_physical_objects_for_scenario(params.scenario_id, [50, 51, 52])
     water = await gen_planner_api_service.get_physical_objects_for_scenario(params.scenario_id, [2, 44, 45, 54, 55])
-    context_water = await gen_planner_api_service.get_physical_objects_for_context(params.project_id,
-                                                                                   [2, 44, 45, 54, 55])
+    context_water = await gen_planner_api_service.get_physical_objects_for_context(
+        params.project_id, [2, 44, 45, 54, 55]
+    )
     if not water is None:
         water = water[water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])]
         water.to_crs(water.estimate_utm_crs(), inplace=True)
@@ -120,7 +121,8 @@ async def run_ter_territory_zones_generation(
         water.to_crs(4326, inplace=True)
         if not context_water is None:
             context_water = context_water[
-                context_water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])]
+                context_water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])
+            ]
             context_water.to_crs(context_water.estimate_utm_crs(), inplace=True)
             context_water.geometry = context_water.geometry.apply(
                 lambda x: buffer(x, 2.5) if x.geom_type in ["MultiLineString", "LineString"] else x
@@ -143,7 +145,7 @@ async def run_ter_territory_zones_generation(
 
 @gen_planner_router.post("/run_func_generation", response_model=GenPlannerResultSchema)
 async def run_func_territory_zones_generation(
-        params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
+    params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
 ) -> GenPlannerResultSchema:
     scenario = scenario_func_zones_map.get(params.profile_scenario)
     if not params.scenario_id:
@@ -155,8 +157,9 @@ async def run_func_territory_zones_generation(
         territory = await gen_planner_api_service.get_territory_geom_by_project_id(params.project_id)
     roads = await gen_planner_api_service.get_physical_objects_for_scenario(params.scenario_id, [50, 51, 52])
     water = await gen_planner_api_service.get_physical_objects_for_scenario(params.scenario_id, [2, 44, 45, 54, 55])
-    context_water = await gen_planner_api_service.get_physical_objects_for_context(params.project_id,
-                                                                                   [2, 44, 45, 54, 55])
+    context_water = await gen_planner_api_service.get_physical_objects_for_context(
+        params.project_id, [2, 44, 45, 54, 55]
+    )
     if not water is None:
         water = water[water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])]
         water.to_crs(water.estimate_utm_crs(), inplace=True)
@@ -166,7 +169,8 @@ async def run_func_territory_zones_generation(
         water.to_crs(4326, inplace=True)
         if not context_water is None:
             context_water = context_water[
-                context_water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])]
+                context_water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])
+            ]
             context_water.to_crs(context_water.estimate_utm_crs(), inplace=True)
             context_water.geometry = context_water.geometry.apply(
                 lambda x: buffer(x, 2.5) if x.geom_type in ["MultiLineString", "LineString"] else x

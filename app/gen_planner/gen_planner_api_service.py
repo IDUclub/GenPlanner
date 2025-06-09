@@ -45,9 +45,9 @@ class GenPlannerApiService:
         return result
 
     async def get_physical_objects_for_context(
-            self,
-            project_id: int,
-            object_ids: list[int],
+        self,
+        project_id: int,
+        object_ids: list[int],
     ) -> gpd.GeoDataFrame | pd.DataFrame | None:
         """
         Function to get physical objects for a project
