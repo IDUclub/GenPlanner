@@ -1,12 +1,11 @@
 import json
-from typing import Literal, Any, Optional, Self
+from typing import Any, Literal, Optional, Self
 
 import shapely
 import shapely.geometry as geom
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.exceptions.http_exception import http_exception
-
 
 with open("app/common/example_geometry.json", "r") as et:
     example_territory = json.load(et)
@@ -36,9 +35,7 @@ class Geometry(BaseModel):
         return self._shapely_geom
 
     @classmethod
-    def from_shapely_geometry(
-        cls, geometry: geom.Polygon | geom.MultiPolygon | None
-    ) -> Optional["Geometry"]:
+    def from_shapely_geometry(cls, geometry: geom.Polygon | geom.MultiPolygon | None) -> Optional["Geometry"]:
         """
         Construct Geometry model from shapely geometry.
         """
@@ -96,6 +93,7 @@ class Feature(BaseModel):
             "geometry": self.geometry.as_dict(),
             "properties": self.properties,
         }
+
 
 class FeatureCollection(BaseModel):
     type: Literal["FeatureCollection"] = Field(examples=["FeatureCollection"])

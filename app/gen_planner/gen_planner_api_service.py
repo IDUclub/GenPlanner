@@ -15,8 +15,8 @@ class GenPlannerApiService:
         self.projects = "/projects"
 
     async def get_project_info_by_project_id(
-            self,
-            project_id: int,
+        self,
+        project_id: int,
     ) -> dict:
         """
         Function returns project info from urban api
@@ -45,9 +45,9 @@ class GenPlannerApiService:
         return result
 
     async def get_physical_objects_for_scenario(
-            self,
-            scenario_id: int,
-            object_ids: list[int],
+        self,
+        scenario_id: int,
+        object_ids: list[int],
     ) -> gpd.GeoDataFrame | pd.DataFrame | None:
         """
         Function to get physical objects for a scenario
@@ -67,7 +67,7 @@ class GenPlannerApiService:
                 params={
                     "physical_object_type_id": object_id,
                 },
-                headers=self.headers
+                headers=self.headers,
             )
             if response["features"]:
                 layers.append(gpd.GeoDataFrame.from_features(response, crs=4326))

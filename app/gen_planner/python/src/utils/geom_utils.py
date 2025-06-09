@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats.qmc import PoissonDisk
 from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
-from shapely.ops import polygonize, unary_union, nearest_points
+from shapely.ops import nearest_points, polygonize, unary_union
 
 
 def rotate_poly(poly: Polygon | MultiPolygon, pivot_point, angle_rad) -> Polygon | MultiPolygon:

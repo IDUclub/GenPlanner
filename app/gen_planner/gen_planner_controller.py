@@ -2,19 +2,19 @@ import asyncio
 import json
 from typing import Annotated, Literal
 
+import geopandas as gpd
+from fastapi import APIRouter, Depends
 from loguru import logger
 from shapely import buffer
 
 from app.gen_planner.python.src.genplanner import GenPlanner
-
-from fastapi import APIRouter, Depends
-import geopandas as gpd
+from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone
 
 from .api_constants import scenario_func_zones_map, scenario_ter_zones_map
-from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone
+from .gen_planner_api_service import gen_planner_api_service
 from .gen_planner_dto import GenPlannerFuncZonesDTO, GenPlannerTerZonesDTO
 from .gen_planner_schema import GenPlannerResultSchema
-from .gen_planner_api_service import gen_planner_api_service
+
 # from .gen_planner_service import gen_planner_service
 
 
@@ -31,12 +31,13 @@ gen_planner_router = APIRouter(tags=["gen_planner"])
 #     result = await gen_planner_service.get_task_status(task_id)
 #     return result
 
+
 def generate(
-        scenario: FuncZone | TerritoryZone,
-        func_type: Literal["ter", "zone"],
-        territory: gpd.GeoDataFrame,
-        exclude: gpd.GeoDataFrame | None,
-        project_roads: gpd.GeoDataFrame | None = None,
+    scenario: FuncZone | TerritoryZone,
+    func_type: Literal["ter", "zone"],
+    territory: gpd.GeoDataFrame,
+    exclude: gpd.GeoDataFrame | None,
+    project_roads: gpd.GeoDataFrame | None = None,
 ) -> tuple[gpd.GeoDataFrame]:
     """
     Function generates gen plan
@@ -82,6 +83,7 @@ async def get_available_territories_profiles():
     result = [i for i in scenario_ter_zones_map]
     return result
 
+
 @gen_planner_router.get("/gen_planner/zones_list", response_model=list[int])
 async def get_available_zones_profiles():
     """
@@ -91,9 +93,10 @@ async def get_available_zones_profiles():
     result = [i for i in scenario_func_zones_map]
     return result
 
+
 @gen_planner_router.post("/run_ter_generation", response_model=GenPlannerResultSchema)
 async def run_ter_territory_zones_generation(
-        params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
+    params: Annotated[GenPlannerTerZonesDTO, Depends(GenPlannerTerZonesDTO)]
 ) -> GenPlannerResultSchema:
 
     scenario = scenario_ter_zones_map.get(params.profile_scenario)
@@ -110,7 +113,8 @@ async def run_ter_territory_zones_generation(
         water = water[water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])]
         water.to_crs(water.estimate_utm_crs(), inplace=True)
         water.geometry = water.geometry.apply(
-            lambda x: buffer(x, 2.5) if x.geom_type in ["MultiLineString", "LineString"] else x)
+            lambda x: buffer(x, 2.5) if x.geom_type in ["MultiLineString", "LineString"] else x
+        )
         water.to_crs(4326, inplace=True)
     zones, roads = await asyncio.to_thread(
         generate,
@@ -121,16 +125,14 @@ async def run_ter_territory_zones_generation(
         project_roads=roads,
     )
     zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
-    result_dict = {
-        "zones": json.loads(zones.to_json()),
-        "roads": json.loads(roads.to_json())
-    }
+    result_dict = {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
     result = GenPlannerResultSchema(**result_dict)
     return result
 
+
 @gen_planner_router.post("/run_func_generation", response_model=GenPlannerResultSchema)
 async def run_func_territory_zones_generation(
-        params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
+    params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)]
 ) -> GenPlannerResultSchema:
     scenario = scenario_func_zones_map.get(params.profile_scenario)
     if not params.scenario_id:
@@ -146,7 +148,8 @@ async def run_func_territory_zones_generation(
         water = water[water.geometry.geom_type.isin(["MultiPolygon", "Polygon", "MultiLineString", "LineString"])]
         water.to_crs(water.estimate_utm_crs(), inplace=True)
         water.geometry = water.geometry.apply(
-            lambda x: buffer(x, 2.5) if x.geom_type in ["MultiLineString", "LineString"] else x)
+            lambda x: buffer(x, 2.5) if x.geom_type in ["MultiLineString", "LineString"] else x
+        )
         water.to_crs(4326, inplace=True)
     zones, roads = await asyncio.to_thread(
         generate,
@@ -158,9 +161,6 @@ async def run_func_territory_zones_generation(
     )
     zones["func_zone"] = zones["func_zone"].apply(lambda x: x.name if x else None)
     zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
-    result_dict = {
-        "zones": json.loads(zones.to_json()),
-        "roads": json.loads(roads.to_json())
-    }
+    result_dict = {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
     result = GenPlannerResultSchema(**result_dict)
     return result

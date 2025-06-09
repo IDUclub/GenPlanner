@@ -2,17 +2,17 @@ import geopandas as gpd
 import pandas as pd
 import pulp
 from loguru import logger
-from shapely import LineString, Polygon, Point
-from shapely.ops import polygonize, unary_union, nearest_points
+from shapely import LineString, Point, Polygon
+from shapely.ops import nearest_points, polygonize, unary_union
 
 from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.tasks.base_splitters import _split_polygon
 from app.gen_planner.python.src.tasks.block_splitters import multi_feature2blocks_initial
 from app.gen_planner.python.src.utils import (
-    polygon_angle,
-    rotate_coords,
     elastic_wrap,
     geometry_to_multilinestring,
+    polygon_angle,
+    rotate_coords,
 )
 from app.gen_planner.python.src.zoning import FuncZone
 
@@ -87,8 +87,8 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     proxy_zones.geometry = proxy_zones.geometry.apply(
         lambda geom: Polygon(rotate_coords(geom.exterior.coords, pivot_point, angle_rad_to_rotate))
     )
-    proxy_zones['name'] = proxy_zones['zone_name'].apply(lambda x: x.name)
-    proxy_zones = proxy_zones.dissolve(by='name').reset_index(drop=True)
+    proxy_zones["name"] = proxy_zones["zone_name"].apply(lambda x: x.name)
+    proxy_zones = proxy_zones.dissolve(by="name").reset_index(drop=True)
 
     proxy_fix_points = proxy_zones.copy()
     proxy_fix_points.geometry = proxy_fix_points.geometry.centroid
@@ -205,6 +205,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             task_fixed_terr_zones["geometry"] = task_fixed_terr_zones["geometry"].apply(
                 lambda fix_p: nearest_points(fix_p, zone_polygon.buffer(-0.1, resolution=1))[1]
             )
+            task_fixed_terr_zones = task_fixed_terr_zones[task_fixed_terr_zones["geometry"].duplicated(keep="first")]
             # task_fixed_terr_zones = None
             new_tasks.append(
                 (feature2terr_zones_initial, (task_gdf, task_func_zone, split_further, task_fixed_terr_zones), kwargs)
