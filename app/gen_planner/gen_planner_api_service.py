@@ -44,6 +44,39 @@ class GenPlannerApiService:
         result = gpd.GeoDataFrame(geometry=[shape(response["geometry"])], crs=4326)
         return result
 
+    async def get_physical_objects_for_context(
+            self,
+            project_id: int,
+            object_ids: list[int],
+    ) -> gpd.GeoDataFrame | pd.DataFrame | None:
+        """
+        Function to get physical objects for a project
+        Args:
+            project_id (int): id of project
+            object_ids (list[int]): list of object ids
+        Returns:
+            gpd.GeoDataFrame | None: gdf with physical objects with listed objects ids or none if noe objects found
+        """
+
+        url = f"{self.v1}/projects/{project_id}/context/geometries_with_all_objects"
+
+        layers = []
+        for object_id in object_ids:
+            response = await self.urban_extractor.get(
+                extra_url=url,
+                params={
+                    "physical_object_type_id": object_id,
+                },
+                headers=self.headers,
+            )
+            if response["features"]:
+                layers.append(gpd.GeoDataFrame.from_features(response, crs=4326))
+        if layers:
+            objects_layer = pd.concat(layers)
+            return objects_layer
+        else:
+            return None
+
     async def get_physical_objects_for_scenario(
         self,
         scenario_id: int,
