@@ -18,6 +18,7 @@ from app.gen_planner.python.src.tasks import (
 )
 from app.gen_planner.python.src.utils import (
     explode_linestring,
+    extend_linestring,
     geometry_to_multilinestring,
     patch_polygon_interior,
     territory_splitter,
@@ -72,7 +73,13 @@ class GenPlanner:
         # gdf = territory_splitter(gdf, exclude_features, return_splitters=False)
         if len(roads) > 0:
             roads = roads.to_crs(self.local_crs)
-            gdf = territory_splitter(gdf, roads, return_splitters=False)
+            roads = roads.explode(ignore_index=True)
+            splitters_roads = roads.copy()
+            splitters_roads.geometry = splitters_roads.geometry.normalize()
+            splitters_roads = splitters_roads[~splitters_roads.geometry.duplicated(keep="first")]
+            splitters_roads.geometry = splitters_roads.geometry.apply(extend_linestring, distance=5)
+
+            gdf = territory_splitter(gdf, splitters_roads, return_splitters=False)
             splitters_lines = gpd.GeoDataFrame(
                 geometry=pd.Series(
                     gdf.geometry.apply(geometry_to_multilinestring).explode().apply(explode_linestring)
@@ -80,6 +87,12 @@ class GenPlanner:
                 crs=gdf.crs,
             )
             splitters_lines.geometry = splitters_lines.geometry.centroid.buffer(0.1, resolution=1)
+            roads["new_geometry"] = (
+                roads.geometry.apply(geometry_to_multilinestring).explode().apply(explode_linestring)
+            )
+            roads = roads.explode(column="new_geometry", ignore_index=True)
+            roads["geometry"] = roads["new_geometry"]
+            roads.drop(columns=["new_geometry"], inplace=True)
             roads = roads.sjoin(splitters_lines, how="inner", predicate="intersects")
             roads = roads[~roads.index.duplicated(keep="first")]
             local_road_width = roads_width_def.get("local road")
@@ -92,9 +105,12 @@ class GenPlanner:
             roads["road_lvl"] = "user_roads"
         if len(exclude_features) > 0:
             exclude_features = exclude_features.to_crs(self.local_crs)
-            exclude_union = unary_union(exclude_features.geometry)
-            gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
-            gdf = gdf.explode(ignore_index=True)
+            exclude_features = exclude_features.clip(self.original_territory.to_crs(self.local_crs))
+            # exclude_features.geometry = exclude_features.geometry.buffer(0.1, resolution=1)
+            gdf = territory_splitter(gdf, exclude_features, return_splitters=False)
+            # exclude_union = exclude_features.union_all()
+            # gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
+            # gdf = gdf.explode(ignore_index=True)
 
         gdf.geometry = gdf.geometry.apply(patch_polygon_interior)
 

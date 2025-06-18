@@ -162,7 +162,9 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     model += pulp.lpSum(slack[i, z] for (i, z) in slack), "MinimizeTotalSlack"
 
     model.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20, gapRel=0.02))
-    print("Статус:", pulp.LpStatus[model.status])
+    if model.status == pulp.LpStatusInfeasible:
+        print("Не решается(( LpStatus:", pulp.LpStatus[model.status])
+        return {"new_tasks": [(multi_feature2terr_zones_initial, task, kwargs)]}
 
     del zone_capacity, zone_permitted, min_areas, target_areas, division, model, slack
 
@@ -299,12 +301,14 @@ def feature2terr_zones_initial(task, **kwargs):
 
     if not split_further:
         zones["func_zone"] = func_zone
-        zones["territory_zone"] = zones["zone_name"]
-        zones = zones[["func_zone", "territory_zone", "geometry"]]
+        if len(zones) > 0:
+            zones["territory_zone"] = zones["zone_name"]
+            zones = zones[["func_zone", "territory_zone", "geometry"]]
         return {"generation": zones, "generated_roads": roads}
 
     # if split further
     kwargs.update({"func_zone": func_zone})
-    zones["territory_zone"] = zones["zone_name"]
+    if len(zones) > 0:
+        zones["territory_zone"] = zones["zone_name"]
     task = [(multi_feature2blocks_initial, (zones,), kwargs)]
     return {"new_tasks": task, "generated_roads": roads}
