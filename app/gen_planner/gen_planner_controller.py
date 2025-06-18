@@ -182,7 +182,8 @@ async def run_func_territory_zones_generation(
         project_roads=roads,
     )
     zones["func_zone"] = zones["func_zone"].apply(lambda x: x.name if x else None)
-    zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
+    zones["terr_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
+    zones.drop(columns=["territory_zone"], inplace=True)
     result_dict = {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
     result = GenPlannerResultSchema(**result_dict)
     return result
