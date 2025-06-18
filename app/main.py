@@ -40,7 +40,10 @@ logger.add(
 #     asyncio.create_task(process_tasks(), name="plan_generation")
 #     yield
 
-app = FastAPI()
+app = FastAPI(
+    title="GenPlanner",
+    description="GenPlanner by DDonnyy api service",
+)
 
 origins = ["*"]
 
