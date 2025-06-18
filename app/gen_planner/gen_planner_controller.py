@@ -39,7 +39,7 @@ def generate(
     territory: gpd.GeoDataFrame,
     exclude: gpd.GeoDataFrame | None,
     project_roads: gpd.GeoDataFrame | None = None,
-) -> tuple[gpd.GeoDataFrame]:
+) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame] | None:
     """
     Function generates gen plan
     :param scenario: scenario to generate from
@@ -52,22 +52,22 @@ def generate(
 
     gen_planner = GenPlanner(territory, project_roads, exclude, dev_mode=True)
     if func_type == "zone":
-        for i in range(15):
-            try:
-                zones, roads = gen_planner.features2terr_zones2blocks(scenario)
-                if roads.empty:
-                    return zones, gpd.GeoDataFrame()
-                return zones, roads
-            except Exception as e:
-                logger.warning(e.__str__())
-                continue
-    elif func_type == "ter":
-        for i in range(20):
-            # try:
-            zones, roads = gen_planner.features2blocks(scenario)
+        # for i in range(15):
+        try:
+            zones, roads = gen_planner.features2terr_zones2blocks(scenario)
             if roads.empty:
                 return zones, gpd.GeoDataFrame()
             return zones, roads
+        except Exception as e:
+            logger.warning(e.__str__())
+            # continue
+    elif func_type == "ter":
+        # for i in range(20):
+            # try:
+        zones, roads = gen_planner.features2blocks(scenario)
+        if roads.empty:
+            return zones, gpd.GeoDataFrame()
+        return zones, roads
             # except Exception as e:
             #     logger.warning(e.__str__())
             #     continue
@@ -177,14 +177,23 @@ async def run_func_territory_zones_generation(
             )
             context_water.to_crs(4326, inplace=True)
             water = pd.concat([water, context_water])
-    zones, roads = await asyncio.to_thread(
-        generate,
+    # zones, roads = await asyncio.to_thread(
+    #     generate,
+    #     scenario=scenario,
+    #     func_type="zone",
+    #     territory=territory,
+    #     exclude=water,
+    #     project_roads=roads,
+    # )
+
+    zones, roads = generate(
         scenario=scenario,
         func_type="zone",
         territory=territory,
         exclude=water,
-        project_roads=roads,
-    )
+        project_roads=roads)
+
+    #ToDo rename to territory_zone
     zones["func_zone"] = zones["func_zone"].apply(lambda x: x.name if x else None)
     zones["terr_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
     zones.drop(columns=["territory_zone"], inplace=True)
