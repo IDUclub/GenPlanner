@@ -40,7 +40,8 @@ def generate(
 ) -> tuple[gpd.GeoDataFrame]:
     """
     Function generates gen plan
-    :param scenario: scenario to generate from
+    :param scenario: scenar
+    io to generate from
     :param func_type:  func type to generate by. Can be ter or zone
     :param territory: territory gdf to generate on
     :param project_roads: roads gdf to generate on
