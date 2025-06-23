@@ -40,11 +40,12 @@ class GenPlanner:
     dev_mod: bool = False
 
     def __init__(
-        self,
-        features: gpd.GeoDataFrame,
-        roads: gpd.GeoDataFrame = None,
-        exclude_features: gpd.GeoDataFrame = None,
-        **kwargs,
+            self,
+            features: gpd.GeoDataFrame,
+            roads: gpd.GeoDataFrame = None,
+            exclude_features: gpd.GeoDataFrame = None,
+            simplify_geometry: bool = True,
+            **kwargs,
     ):
         self.original_territory = features.copy()
         self.original_crs = features.crs
@@ -54,13 +55,23 @@ class GenPlanner:
             roads = gpd.GeoDataFrame()
         if exclude_features is None:
             exclude_features = gpd.GeoDataFrame()
-        self._create_working_gdf(self.original_territory.copy(), roads.copy(), exclude_features.copy())
+        self._create_working_gdf(self.original_territory.copy(),
+                                 roads.copy(),
+                                 exclude_features.copy(),
+                                 simplify_geometry,
+                                 kwargs.get("simplify_value", 10),
+                                 )
         if "dev_mod" in kwargs:
             self.dev_mod = True
             logger.info("Dev mod activated, no more ProcessPool")
 
     def _create_working_gdf(
-        self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame, exclude_features: gpd.GeoDataFrame
+            self,
+            gdf: gpd.GeoDataFrame,
+            roads: gpd.GeoDataFrame,
+            exclude_features: gpd.GeoDataFrame,
+            simplify_geometry: bool,
+            simplify_value: float,
     ) -> Polygon | MultiPolygon:
 
         gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
@@ -71,15 +82,30 @@ class GenPlanner:
         gdf = gdf.to_crs(self.local_crs)
 
         # gdf = territory_splitter(gdf, exclude_features, return_splitters=False)
+        if len(exclude_features) > 0:
+            exclude_features = exclude_features.to_crs(self.local_crs)
+            exclude_features = exclude_features.clip(self.original_territory.to_crs(self.local_crs))
+            # exclude_features.geometry = exclude_features.geometry.buffer(0.1, resolution=1)
+            gdf = territory_splitter(gdf, exclude_features, return_splitters=False).reset_index(drop=True)
+            # exclude_union = exclude_features.union_all()
+            # gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
+            # gdf = gdf.explode(ignore_index=True)
+
+        if simplify_geometry:
+            gdf.geometry = gdf.geometry.simplify(simplify_value)
+
         if len(roads) > 0:
             roads = roads.to_crs(self.local_crs)
+            # if simplify_geometry:
+            #     print('simplified on', simplify_value)
+            #     roads.geometry = roads.geometry.simplify(simplify_value)
             roads = roads.explode(ignore_index=True)
             splitters_roads = roads.copy()
             splitters_roads.geometry = splitters_roads.geometry.normalize()
             splitters_roads = splitters_roads[~splitters_roads.geometry.duplicated(keep="first")]
             splitters_roads.geometry = splitters_roads.geometry.apply(extend_linestring, distance=5)
 
-            gdf = territory_splitter(gdf, splitters_roads, return_splitters=False)
+            gdf = territory_splitter(gdf, splitters_roads, return_splitters=False).reset_index(drop=True)
             splitters_lines = gpd.GeoDataFrame(
                 geometry=pd.Series(
                     gdf.geometry.apply(geometry_to_multilinestring).explode().apply(explode_linestring)
@@ -103,17 +129,8 @@ class GenPlanner:
                 roads["roads_width"] = local_road_width
             roads["roads_width"] = roads["roads_width"].fillna(local_road_width)
             roads["road_lvl"] = "user_roads"
-        if len(exclude_features) > 0:
-            exclude_features = exclude_features.to_crs(self.local_crs)
-            exclude_features = exclude_features.clip(self.original_territory.to_crs(self.local_crs))
-            # exclude_features.geometry = exclude_features.geometry.buffer(0.1, resolution=1)
-            gdf = territory_splitter(gdf, exclude_features, return_splitters=False)
-            # exclude_union = exclude_features.union_all()
-            # gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
-            # gdf = gdf.explode(ignore_index=True)
 
         gdf.geometry = gdf.geometry.apply(patch_polygon_interior)
-
         self.user_valid_roads = roads
         self.source_multipolygon = False if len(gdf) == 1 else True
         self.territory_to_work_with = gdf
@@ -171,7 +188,8 @@ class GenPlanner:
         return fixed_zones
 
     def split_features(
-        self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None, fixed_zones: gpd.GeoDataFrame = None
+            self, zones_ratio_dict: dict = None, zones_n: int = None, roads_width=None,
+            fixed_zones: gpd.GeoDataFrame = None
     ):
         """
         Splits every feature in working gdf according to provided zones_ratio_dict or zones_n
@@ -204,17 +222,17 @@ class GenPlanner:
         return self._run(multi_feature2blocks_initial, self.territory_to_work_with)
 
     def features2terr_zones(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=False)
 
     def features2terr_zones2blocks(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=True)
 
     def _features2terr_zones(
-        self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
+            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None, split_further=False
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         if not isinstance(funczone, FuncZone):
             raise TypeError("funczone arg must be of type FuncZone")
@@ -243,7 +261,7 @@ class GenPlanner:
 
 
 def parallel_split_queue(
-    task_queue: multiprocessing.Queue, local_crs, dev=False
+        task_queue: multiprocessing.Queue, local_crs, dev=False
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
     splitted = []
     roads_all = []

@@ -134,7 +134,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     x = {(i, z): pulp.LpVariable(f"feature index {i} zone type {z}", lowBound=0) for (i, z) in zone_permitted}
     y = {(i, z): pulp.LpVariable(f"y_{i}_{z}", cat="Binary") for (i, z) in zone_permitted}
 
-    slack = {(i, z): pulp.LpVariable(f"slack_{i}_{z}", lowBound=0) for (i, z) in x}
+    # slack = {(i, z): pulp.LpVariable(f"slack_{i}_{z}", lowBound=0) for (i, z) in x}
 
     for i in division["index"].unique():
         model += (
@@ -142,7 +142,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             f"Capacity_feature_{i}",
         )
     for i, z in x:
-        model += x[i, z] + slack[i, z] >= min_areas[z] * y[i, z], f"SoftMinArea_{i}_{z}"
+        # model += x[i, z] + slack[i, z] >= min_areas[z] * y[i, z], f"SoftMinArea_{i}_{z}"
         model += x[i, z] <= zone_capacity[i] * y[i, z], f"MaxIfAssigned_{i}_{z}"
 
     for z in terr_zones["zone"]:
@@ -159,14 +159,14 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             if (i, z) in x:
                 model += x[i, z] >= 1e-3, f"StronglyFixed_{i}_{z}"
 
-    model += pulp.lpSum(slack[i, z] for (i, z) in slack), "MinimizeTotalSlack"
+    # model += pulp.lpSum(slack[i, z] for (i, z) in slack), "MinimizeTotalSlack"
 
-    model.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20, gapRel=0.02))
+    model.solve(pulp.PULP_CBC_CMD(msg=True, timeLimit=20, gapRel=0.01))
     if model.status == pulp.LpStatusInfeasible:
         print("Не решается(( LpStatus:", pulp.LpStatus[model.status])
         return {"new_tasks": [(multi_feature2terr_zones_initial, task, kwargs)]}
 
-    del zone_capacity, zone_permitted, min_areas, target_areas, division, model, slack
+    # del zone_capacity, zone_permitted, min_areas, target_areas, division, model, slack
 
     allocations = []
     for (i, z), var in x.items():
@@ -175,6 +175,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             allocations.append((i, z, round(val, 2)))
     del x, y
     allocations = pd.DataFrame(allocations, columns=["zone_index", "territorial_zone", "assigned_area"])
+
     kwargs.update({"func_zone": func_zone})
 
     ready_for_blocks = []
