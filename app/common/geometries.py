@@ -3,7 +3,6 @@ from typing import Literal, Any, Optional, Self
 
 import shapely
 import shapely.geometry as geom
-from mercantile import feature
 from pydantic import BaseModel, Field, model_validator, field_validator
 
 from app.common.exceptions.http_exception import http_exception
@@ -15,6 +14,7 @@ with open("app/common/example_geometry.json", "r") as et:
 with open("app/common/fixed_points_example.json", "r") as fpe:
     fixed_points_example = json.load(fpe)
 
+fixed_zones_name = []
 
 class Geometry(BaseModel):
     """
@@ -153,6 +153,7 @@ class PointFeature(BaseModel):
                 _detail={},
                 _input=value,
             )
+        if value["fixed_zone"] not in []:
         return value
 
     def as_dict(self) -> dict:
