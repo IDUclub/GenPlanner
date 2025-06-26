@@ -118,10 +118,9 @@ def _split_polygon(
         for pt in points:
             xy = normalize_coords(pt.coords, bounds)
             fixed_points.append((xy[0][0], xy[0][1], room_idx))
-
     normalized_polygon = Polygon(normalize_coords(polygon.exterior.coords, bounds))
 
-    attempts = 50
+    attempts = 20
     best_generation = (gpd.GeoDataFrame(), gpd.GeoDataFrame())
     best_multipolygon_count = float("inf")
     best_error = float("inf")
@@ -229,9 +228,12 @@ def _split_polygon(
             new_roads = gpd.GeoDataFrame(geometry=[LineString(x) for x in new_roads], crs=local_crs)
             return devided_zones, new_roads
 
-        except Exception:
+        except Exception as e:
             if i + 1 == attempts:
                 devided_zones, new_roads = best_generation
                 if len(devided_zones) > 0:
                     devided_zones = devided_zones.explode(ignore_index=True)
+                else:
+                    devided_zones = gpd.GeoDataFrame(geometry=[polygon], crs=local_crs)
+                    devided_zones['zone_name'] = ''
                 return devided_zones, new_roads

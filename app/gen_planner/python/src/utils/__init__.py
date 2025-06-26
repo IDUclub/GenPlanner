@@ -10,4 +10,5 @@ from .geom_utils import (
     territory_splitter,
     explode_linestring,
     patch_polygon_interior,
+    extend_linestring,
 )
