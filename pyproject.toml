@@ -26,10 +26,6 @@ aiohttp = "^3.11.10"
 pulp = "^3.1.1"
 seaborn = "^0.13.2"
 
-
-
-
-
 [tool.poetry.group.dev.dependencies]
 black = "^24.2.0"
 pylint = "^3.0.3"

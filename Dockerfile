@@ -55,7 +55,8 @@ RUN rustup default stable
 # Verify installations
 RUN rustc --version && poetry --version
 
-RUN cd app/gen_planner/rust && poetry run maturin develop
+RUN cd app/gen_planner/rust && poetry run maturin build --release
+RUN poetry run pip install app/gen_planner/rust/target/wheels/rust_optimizer-*.whl
 
 # Run the app with gunicorn
-CMD ["poetry", "run", "gunicorn", "--bind", "0.0.0.0:80", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
+CMD ["poetry", "run", "gunicorn", "--bind", "0.0.0.0:80", "--timeout", "1000", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
