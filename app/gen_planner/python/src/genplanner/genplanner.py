@@ -12,15 +12,16 @@ from shapely.ops import polygonize, unary_union
 from app.gen_planner.python.src._config import config
 from app.gen_planner.python.src.tasks import (
     feature2terr_zones_initial,
-    multi_feature2terr_zones_initial,
-    multi_feature2blocks_initial,
     gdf_splitter,
+    multi_feature2blocks_initial,
+    multi_feature2terr_zones_initial,
 )
 from app.gen_planner.python.src.utils import (
-    geometry_to_multilinestring,
-    territory_splitter,
     explode_linestring,
+    extend_linestring,
+    geometry_to_multilinestring,
     patch_polygon_interior,
+    territory_splitter,
 )
 from app.gen_planner.python.src.zoning import FuncZone, TerritoryZone, basic_func_zone
 
@@ -43,6 +44,7 @@ class GenPlanner:
             features: gpd.GeoDataFrame,
             roads: gpd.GeoDataFrame = None,
             exclude_features: gpd.GeoDataFrame = None,
+            simplify_geometry: bool = True,
             **kwargs,
     ):
         self.original_territory = features.copy()
@@ -53,13 +55,23 @@ class GenPlanner:
             roads = gpd.GeoDataFrame()
         if exclude_features is None:
             exclude_features = gpd.GeoDataFrame()
-        self._create_working_gdf(self.original_territory.copy(), roads.copy(), exclude_features.copy())
+        self._create_working_gdf(self.original_territory.copy(),
+                                 roads.copy(),
+                                 exclude_features.copy(),
+                                 simplify_geometry,
+                                 kwargs.get("simplify_value", 10),
+                                 )
         if "dev_mod" in kwargs:
             self.dev_mod = True
             logger.info("Dev mod activated, no more ProcessPool")
 
     def _create_working_gdf(
-            self, gdf: gpd.GeoDataFrame, roads: gpd.GeoDataFrame, exclude_features: gpd.GeoDataFrame
+            self,
+            gdf: gpd.GeoDataFrame,
+            roads: gpd.GeoDataFrame,
+            exclude_features: gpd.GeoDataFrame,
+            simplify_geometry: bool,
+            simplify_value: float,
     ) -> Polygon | MultiPolygon:
 
         gdf = gdf[gdf.geom_type.isin(["MultiPolygon", "Polygon"])]
@@ -70,9 +82,30 @@ class GenPlanner:
         gdf = gdf.to_crs(self.local_crs)
 
         # gdf = territory_splitter(gdf, exclude_features, return_splitters=False)
+        if len(exclude_features) > 0:
+            exclude_features = exclude_features.to_crs(self.local_crs)
+            exclude_features = exclude_features.clip(self.original_territory.to_crs(self.local_crs))
+            # exclude_features.geometry = exclude_features.geometry.buffer(0.1, resolution=1)
+            gdf = territory_splitter(gdf, exclude_features, return_splitters=False).reset_index(drop=True)
+            # exclude_union = exclude_features.union_all()
+            # gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
+            # gdf = gdf.explode(ignore_index=True)
+
+        if simplify_geometry:
+            gdf.geometry = gdf.geometry.simplify(simplify_value)
+
         if len(roads) > 0:
             roads = roads.to_crs(self.local_crs)
-            gdf = territory_splitter(gdf, roads, return_splitters=False)
+            # if simplify_geometry:
+            #     print('simplified on', simplify_value)
+            #     roads.geometry = roads.geometry.simplify(simplify_value)
+            roads = roads.explode(ignore_index=True)
+            splitters_roads = roads.copy()
+            splitters_roads.geometry = splitters_roads.geometry.normalize()
+            splitters_roads = splitters_roads[~splitters_roads.geometry.duplicated(keep="first")]
+            splitters_roads.geometry = splitters_roads.geometry.apply(extend_linestring, distance=5)
+
+            gdf = territory_splitter(gdf, splitters_roads, return_splitters=False).reset_index(drop=True)
             splitters_lines = gpd.GeoDataFrame(
                 geometry=pd.Series(
                     gdf.geometry.apply(geometry_to_multilinestring).explode().apply(explode_linestring)
@@ -80,6 +113,12 @@ class GenPlanner:
                 crs=gdf.crs,
             )
             splitters_lines.geometry = splitters_lines.geometry.centroid.buffer(0.1, resolution=1)
+            roads["new_geometry"] = (
+                roads.geometry.apply(geometry_to_multilinestring).explode().apply(explode_linestring)
+            )
+            roads = roads.explode(column="new_geometry", ignore_index=True)
+            roads["geometry"] = roads["new_geometry"]
+            roads.drop(columns=["new_geometry"], inplace=True)
             roads = roads.sjoin(splitters_lines, how="inner", predicate="intersects")
             roads = roads[~roads.index.duplicated(keep="first")]
             local_road_width = roads_width_def.get("local road")
@@ -90,14 +129,8 @@ class GenPlanner:
                 roads["roads_width"] = local_road_width
             roads["roads_width"] = roads["roads_width"].fillna(local_road_width)
             roads["road_lvl"] = "user_roads"
-        if len(exclude_features) > 0:
-            exclude_features = exclude_features.to_crs(self.local_crs)
-            exclude_union = unary_union(exclude_features.geometry)
-            gdf.geometry = gdf.geometry.apply(lambda geom: geom.difference(exclude_union))
-            gdf = gdf.explode(ignore_index=True)
 
         gdf.geometry = gdf.geometry.apply(patch_polygon_interior)
-
         self.user_valid_roads = roads
         self.source_multipolygon = False if len(gdf) == 1 else True
         self.territory_to_work_with = gdf

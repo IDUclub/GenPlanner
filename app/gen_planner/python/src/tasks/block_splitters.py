@@ -17,8 +17,8 @@ def multi_feature2blocks_initial(task, **kwargs):
     (poly_gdf,) = task
     if not isinstance(poly_gdf, gpd.GeoDataFrame):
         raise ValueError(f"poly_gdf wrong dtype {type(poly_gdf)}")
-    if 'territory_zone' not in poly_gdf.columns:
-        raise KeyError(f'territory_zone not in poly_gdf')
+    if "territory_zone" not in poly_gdf.columns:
+        raise KeyError(f"territory_zone not in poly_gdf")
     kwargs.update({"local_crs": poly_gdf.crs})
     new_tasks = []
     for ind, row in poly_gdf.iterrows():
@@ -40,11 +40,13 @@ def multi_feature2blocks_initial(task, **kwargs):
             delimiters.append(max_delimiter)
 
         if len(delimiters) == 0:
-            new_tasks.append((
-                polygon2blocks_splitter,
-                (geometry, [1], min_block_area, 1, [roads_width_def.get("local road")]),
-                zone_kwargs,
-            ))
+            new_tasks.append(
+                (
+                    polygon2blocks_splitter,
+                    (geometry, [1], min_block_area, 1, [roads_width_def.get("local road")]),
+                    zone_kwargs,
+                )
+            )
             continue
 
         min_split = 1 if len(delimiters) == 1 else 2
@@ -64,11 +66,9 @@ def multi_feature2blocks_initial(task, **kwargs):
         roads_widths = np.linspace(min_width, max_width, len(delimiters))
 
         # Добавление задачи
-        new_tasks.append((
-            polygon2blocks_splitter,
-            (geometry, delimiters, min_block_area, 1, roads_widths),
-            zone_kwargs
-        ))
+        new_tasks.append(
+            (polygon2blocks_splitter, (geometry, delimiters, min_block_area, 1, roads_widths), zone_kwargs)
+        )
     return {"new_tasks": new_tasks}
 
 
@@ -122,6 +122,8 @@ def polygon2blocks_splitter(task, **kwargs):
         tasks = []
         for poly in blocks:
             if poly is not None:
-                tasks.append((polygon2blocks_splitter, (Polygon(poly), delimeters, min_area, deep, roads_widths), kwargs))
+                tasks.append(
+                    (polygon2blocks_splitter, (Polygon(poly), delimeters, min_area, deep, roads_widths), kwargs)
+                )
 
         return {"new_tasks": tasks, "generated_roads": roads}

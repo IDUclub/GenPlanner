@@ -4,8 +4,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 from scipy.stats.qmc import PoissonDisk
-from shapely import LineString, MultiLineString, MultiPolygon, Point, Polygon
-from shapely.ops import polygonize, unary_union, nearest_points
+from shapely import GeometryCollection, LineString, MultiLineString, MultiPolygon, Point, Polygon
+from shapely.ops import nearest_points, polygonize, unary_union
 
 
 def rotate_poly(poly: Polygon | MultiPolygon, pivot_point, angle_rad) -> Polygon | MultiPolygon:
@@ -22,7 +22,7 @@ def elastic_wrap(gdf: gpd.GeoDataFrame) -> Polygon:
     )
     if pd.isna(max_dist):
         max_dist = 1
-    poly = multip.buffer(max_dist, resolution=4).union_all().buffer(-max_dist, resolution=4)
+    poly = multip.buffer(max_dist + 1).union_all().buffer(-max_dist)
     if isinstance(poly, MultiPolygon):
         return elastic_wrap(gpd.GeoDataFrame(geometry=[poly], crs=gdf.crs))
     poly = Polygon(poly.exterior)
@@ -133,13 +133,11 @@ def territory_splitter(
     splitters = splitters.to_crs(local_crs)
     lines_orig = gdf_to_split.geometry.apply(geometry_to_multilinestring).to_list()
     lines_splitters = splitters.geometry.apply(geometry_to_multilinestring).to_list()
-
     polygons = (
         gpd.GeoDataFrame(geometry=list(polygonize(unary_union(lines_orig + lines_splitters))), crs=local_crs)
         .clip(gdf_to_split.to_crs(local_crs), keep_geom_type=True)
         .explode()
     )
-
     polygons_points = polygons.copy()
     polygons_points.geometry = polygons.representative_point()
     joined_ind = polygons_points.sjoin(splitters, how="inner", predicate="within").index.tolist()
@@ -158,21 +156,49 @@ def territory_splitter(
 
 
 def patch_polygon_interior(polygon: Polygon) -> Polygon:
-    if not polygon.interiors:
-        return polygon
+    inner_geoms = [Polygon(ring) for ring in polygon.interiors]
+    while len(inner_geoms) > 0:
+        lines = []
+        for i in range(len(inner_geoms)):
+            all_but_cur = inner_geoms.copy()
+            poly = all_but_cur.pop(i)
+            lines.append(
+                LineString(nearest_points(poly, GeometryCollection(all_but_cur + [polygon.exterior])))
+                .buffer(0.01, resolution=1)
+                .exterior
+            )
 
-    buffered_poly_w_holes = polygon.buffer(0.1)
-
-    lines = [
-        LineString(nearest_points(hole, buffered_poly_w_holes.exterior)).buffer(0.1, resolution=1).exterior
-        for hole in buffered_poly_w_holes.interiors
-    ]
-
-    polygons = list(polygonize(unary_union([geometry_to_multilinestring(polygon)] + lines)))
-
-    repr_point = polygon.representative_point()
-    for poly in polygons:
-        if poly.contains(repr_point):
-            return poly
-
+        polygons = list(polygonize(unary_union([geometry_to_multilinestring(polygon)] + lines)))
+        repr_point = polygon.representative_point()
+        for poly in polygons:
+            if poly.contains(repr_point):
+                polygon = poly
+                break
+        inner_geoms = [Polygon(ring) for ring in polygon.interiors]
     return polygon
+
+
+def extend_linestring(line: LineString, distance: float = 1.0) -> LineString:
+    if len(line.coords) < 2:
+        raise ValueError("LineString must have at least two points.")
+
+    x0, y0 = line.coords[0]
+    x1, y1 = line.coords[1]
+    dx_start = x0 - x1
+    dy_start = y0 - y1
+    length_start = math.hypot(dx_start, dy_start)
+    unit_dx_start = dx_start / length_start
+    unit_dy_start = dy_start / length_start
+    new_start = (x0 + unit_dx_start * distance, y0 + unit_dy_start * distance)
+
+    xN_1, yN_1 = line.coords[-2]
+    xN, yN = line.coords[-1]
+    dx_end = xN - xN_1
+    dy_end = yN - yN_1
+    length_end = math.hypot(dx_end, dy_end)
+    unit_dx_end = dx_end / length_end
+    unit_dy_end = dy_end / length_end
+    new_end = (xN + unit_dx_end * distance, yN + unit_dy_end * distance)
+
+    new_coords = [new_start] + list(line.coords[1:-1]) + [new_end]
+    return LineString(new_coords)
