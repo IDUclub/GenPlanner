@@ -1,10 +1,10 @@
 # from typing import Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import field_validator
 
 from app.common.exceptions.http_exception import http_exception
 from pydantic import BaseModel
-from .gen_planner_dto import PolygonalFeatureCollection
+from app.gen_planner.dto.gen_planner_dto import PolygonalFeatureCollection
 
 
 class GenPlannerStartSchema(BaseModel):

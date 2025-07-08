@@ -154,6 +154,7 @@ class PointFeature(BaseModel):
                 _input=value,
             )
         if value["fixed_zone"] not in []:
+
         return value
 
     def as_dict(self) -> dict:

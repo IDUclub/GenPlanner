@@ -4,9 +4,8 @@ from typing import Optional, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 import geopandas as gpd
 
-from app.common.geometries import PolygonalFeatureCollection, PointFeatureCollection
+from app.common.geometries_dto.geometries import PolygonalFeatureCollection, PointFeatureCollection
 from app.common.exceptions.http_exception import http_exception
-from app.common.geometries import Geometry
 
 
 with open("app/common/example_geometry.json") as et:
@@ -14,11 +13,12 @@ with open("app/common/example_geometry.json") as et:
 
 
 class GenPlannerDTO(BaseModel):
-
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
     scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
-    territory: Optional[PolygonalFeatureCollection] = Field(default=None, description="The territory geometry")
-    fix_zones: Optional[PointFeatureCollection] = Field(default=None, description="The fix zone geometry")
+    territory: Optional[PolygonalFeatureCollection] | gpd.GeoDataFrame = Field(default=None,
+                                                                               description="The territory geometry")
+    fix_zones: Optional[PointFeatureCollection] | gpd.GeoDataFrame = Field(default=None,
+                                                                           description="The fix zone geometry")
 
     @model_validator(mode="after")
     def validate_territory(self) -> Self:
@@ -43,18 +43,14 @@ class GenPlannerDTO(BaseModel):
                 },
                 _detail=None
             )
-        else:
-            return self
 
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):
-
     profile_scenario: int = Field(..., description="Scenario func zone type")
 
     @field_validator("profile_scenario", mode="before")
     @classmethod
     def validate_scenario(cls, value: int) -> int:
-
         if value in [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]:
             return int(value)
         raise http_exception(
@@ -66,13 +62,11 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
 
 
 class GenPlannerTerZonesDTO(GenPlannerDTO):
-
     profile_scenario: int = Field(..., description="Scenario ter zone type")
 
     @field_validator("profile_scenario", mode="before")
     @staticmethod
     def validate_scenario(value: int):
-
         if value in [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13]:
             return value
         raise http_exception(

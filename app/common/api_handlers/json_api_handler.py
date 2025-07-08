@@ -1,11 +1,10 @@
 import aiohttp
 from loguru import logger
 
-from app.common.config.config import config
 from app.common.exceptions.http_exception import http_exception
 
 
-class AsyncApiHandler:
+class AsyncJsonApiHandler:
     """
     Class for handling async requests to apies
     """
@@ -79,6 +78,3 @@ class AsyncApiHandler:
                     params=params,
                 )
                 return result
-
-
-urban_api_handler = AsyncApiHandler(config.get("URBAN_API"))
