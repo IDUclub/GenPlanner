@@ -1,12 +1,11 @@
 import json
-from typing import Literal, Any, Optional, Self
+from typing import Any, Literal, Optional, Self
 
 import shapely
 import shapely.geometry as geom
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.common.exceptions.http_exception import http_exception
-
 
 with open("app/common/example_geometry.json", "r") as et:
     polygon_example_territory = json.load(et)
@@ -15,6 +14,7 @@ with open("app/common/fixed_points_example.json", "r") as fpe:
     fixed_points_example = json.load(fpe)
 
 fixed_zones_name = []
+
 
 class Geometry(BaseModel):
     """
@@ -40,9 +40,7 @@ class Geometry(BaseModel):
         return self._shapely_geom
 
     @classmethod
-    def from_shapely_geometry(
-        cls, geometry: geom.Polygon | geom.MultiPolygon | None
-    ) -> Optional["Geometry"]:
+    def from_shapely_geometry(cls, geometry: geom.Polygon | geom.MultiPolygon | None) -> Optional["Geometry"]:
         """
         Construct Geometry model from shapely geometry.
         """
@@ -59,8 +57,7 @@ class PointGeometry(BaseModel):
 
     type: Literal["Point"] = Field(examples=[fixed_points_example["features"][0]["geometry"]["type"]])
     coordinates: list[Any] = Field(
-        description="list[int] for Point",
-        examples=[fixed_points_example["features"][0]["geometry"]["coordinates"]]
+        description="list[int] for Point", examples=[fixed_points_example["features"][0]["geometry"]["coordinates"]]
     )
 
     @model_validator(mode="after")
@@ -141,7 +138,7 @@ class PointFeature(BaseModel):
     type: Literal["Feature"] = Field(examples=["Feature"])
     id: Optional[int] = Field(default=None, examples=[0])
     geometry: PointGeometry
-    properties: dict[str, Any] = Field(default=None, examples=[{"fixed_zone": "Territory zone \"transport\""}])
+    properties: dict[str, Any] = Field(default=None, examples=[{"fixed_zone": 'Territory zone "transport"'}])
 
     @field_validator("properties", mode="after")
     @classmethod
@@ -153,8 +150,7 @@ class PointFeature(BaseModel):
                 _detail={},
                 _input=value,
             )
-        if value["fixed_zone"] not in []:
-
+        # TODO add validation for fixed_zone
         return value
 
     def as_dict(self) -> dict:

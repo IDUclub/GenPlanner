@@ -4,7 +4,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 http_bearer = HTTPBearer()
 
 
-async def verify_bearer_token(credentials: HTTPAuthorizationCredentials  = Depends(http_bearer)) -> str:
+async def verify_bearer_token(credentials: HTTPAuthorizationCredentials = Depends(http_bearer)) -> str:
     if not credentials:
         raise HTTPException(
             status_code=401,
@@ -14,8 +14,6 @@ async def verify_bearer_token(credentials: HTTPAuthorizationCredentials  = Depen
     token = credentials.credentials
 
     if not token:
-        raise HTTPException(
-            status_code=400, detail="Token is missing in the authorization header"
-        )
+        raise HTTPException(status_code=400, detail="Token is missing in the authorization header")
 
     return token

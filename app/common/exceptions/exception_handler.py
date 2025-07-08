@@ -12,9 +12,7 @@ from starlette.responses import JSONResponse
 from .http_exception_wrapper import http_exception
 
 
-class ExceptionHandlerMiddleware(
-    BaseHTTPMiddleware
-):  # pylint: disable=too-few-public-methods
+class ExceptionHandlerMiddleware(BaseHTTPMiddleware):  # pylint: disable=too-few-public-methods
     """Handle exceptions, so they become http response code 500 - Internal Server Error if not handled as HTTPException
     previously.
     Attributes:
@@ -59,18 +57,10 @@ class ExceptionHandlerMiddleware(
                 return JSONResponse(
                     status_code=e.status_code,
                     content={
-                        "message": (
-                            e.detail.get("msg")
-                            if isinstance(e.detail, dict)
-                            else str(e.detail)
-                        ),
+                        "message": (e.detail.get("msg") if isinstance(e.detail, dict) else str(e.detail)),
                         "error_type": e.__class__.__name__,
                         "request": request_info,
-                        "detail": (
-                            e.detail.get("detail")
-                            if isinstance(e.detail, dict)
-                            else None
-                        ),
+                        "detail": (e.detail.get("detail") if isinstance(e.detail, dict) else None),
                     },
                 )
             return JSONResponse(

@@ -48,4 +48,3 @@ custom_ter_zones_map_by_name = {
     "agriculture": terr_zones.agriculture_terr,
     "special": terr_zones.special_terr,
 }
-

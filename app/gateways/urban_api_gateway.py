@@ -28,11 +28,7 @@ class UrbanApiGateway:
         self.urban_extractor: AsyncJsonApiHandler = AsyncJsonApiHandler(urban_api_url)
         self.max_async_extractions: int = max_async_extractions
 
-    async def extract_several_requests(
-            self,
-            requests: list[Awaitable],
-            as_gdfs: bool = False
-    ) -> list[list | dict]:
+    async def extract_several_requests(self, requests: list[Awaitable], as_gdfs: bool = False) -> list[list | dict]:
         """
         Function to extract several requests asynchronously
         Args:
@@ -46,15 +42,13 @@ class UrbanApiGateway:
         if len(requests) > self.max_async_extractions:
             results = []
             for i in range(0, len(requests), self.max_async_extractions):
-                batch_requests = requests[i:i + self.max_async_extractions]
+                batch_requests = requests[i : i + self.max_async_extractions]
                 results += await asyncio.gather(*batch_requests)
         else:
             results = await asyncio.gather(*requests)
         if as_gdfs:
             try:
-                results = [
-                    gpd.GeoDataFrame.from_features(result, crs=4326) for result in results
-                ]
+                results = [gpd.GeoDataFrame.from_features(result, crs=4326) for result in results]
             except Exception as e:
                 raise http_exception(
                     500,
@@ -106,10 +100,10 @@ class UrbanApiGateway:
         return result
 
     async def get_physical_objects(
-            self,
-            url: str,
-            object_ids: list[int],
-            token: str | None = None,
+        self,
+        url: str,
+        object_ids: list[int],
+        token: str | None = None,
     ) -> gpd.GeoDataFrame | pd.DataFrame:
         """
         Function asynchronously extracts physical objects from urban api.
@@ -124,13 +118,16 @@ class UrbanApiGateway:
             Any HTTP from urban api will be raised as http_exception
         """
 
-        requests = [self.urban_extractor.get(
-            extra_url=url,
-            params={
-                "physical_object_type_id": object_id,
-            },
-            headers={"Authorization": f"Bearer {token}"} if token else None,
-        ) for object_id in object_ids]
+        requests = [
+            self.urban_extractor.get(
+                extra_url=url,
+                params={
+                    "physical_object_type_id": object_id,
+                },
+                headers={"Authorization": f"Bearer {token}"} if token else None,
+            )
+            for object_id in object_ids
+        ]
         results = await self.extract_several_requests(requests, as_gdfs=True)
         if results:
             return pd.concat(results)
