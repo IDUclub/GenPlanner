@@ -7,19 +7,12 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.common.exceptions.http_exception import http_exception
 from app.common.geometries_dto.geometries import PointFeatureCollection, PolygonalFeatureCollection
 
-with open("app/common/example_geometry.json") as et:
-    example_territory = json.load(et)
-
 
 class GenPlannerDTO(BaseModel):
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
     scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
-    territory: Optional[PolygonalFeatureCollection] | gpd.GeoDataFrame = Field(
-        default=None, description="The territory geometry"
-    )
-    fix_zones: Optional[PointFeatureCollection] | gpd.GeoDataFrame = Field(
-        default=None, description="The fix zone geometry"
-    )
+    territory: Optional[PolygonalFeatureCollection] = Field(default=None, description="The territory geometry")
+    fix_zones: Optional[PointFeatureCollection] = Field(default=None, description="The fix zone geometry")
 
     @model_validator(mode="after")
     def validate_territory(self) -> Self:

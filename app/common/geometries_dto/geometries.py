@@ -1,17 +1,25 @@
 import json
+from pathlib import Path
 from typing import Any, Literal, Optional, Self
 
 import shapely
 import shapely.geometry as geom
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.common.constants.api_constants import custom_ter_zones_map_by_name, scenario_func_zones_map
 from app.common.exceptions.http_exception import http_exception
 
-with open("app/common/example_geometry.json", "r") as et:
+folder_path = Path(__file__).parent.absolute()
+
+
+with open(folder_path / "example_geometry.json", "r") as et:
     polygon_example_territory = json.load(et)
 
-with open("app/common/fixed_points_example.json", "r") as fpe:
+with open(folder_path / "fixed_points_example.json", "r") as fpe:
     fixed_points_example = json.load(fpe)
+
+with open(folder_path / "linestring_geometry.json", "r") as lg:
+    linestring_geom = json.load(lg)
 
 fixed_zones_name = []
 
@@ -84,6 +92,38 @@ class PointGeometry(BaseModel):
         return self.__dict__
 
 
+class LinerGeometry(BaseModel):
+    """
+    Geometry representation for Lines as dict
+    """
+
+    type: Literal["LineString", "MultiLineString"] = Field(examples=["LineString", "MultiLineString"])
+    coordinates: list[Any] = Field(description="list[list[list[float]]] for Polygon", examples=[linestring_geom])
+
+    @model_validator(mode="after")
+    def validate_geom(self) -> Self:
+        """
+        Validating that the geometry dict is valid
+        """
+
+        counter = 0
+        check = self.coordinates.copy()
+        while type(check) is list:
+            check = check[0]
+            counter += 1
+        if counter not in (2, 3):
+            raise http_exception(
+                status_code=400,
+                msg="Input should be a valid Point",
+                _input=self.coordinates,
+                _detail={"nesting": counter},
+            )
+        return self
+
+    def as_dict(self) -> dict:
+        return self.__dict__
+
+
 class PolygonalGeometry(BaseModel):
     """
     Geometry representation for Polygon as dict
@@ -134,6 +174,20 @@ class PolygonalFeature(BaseModel):
         }
 
 
+class LineStringFeature(BaseModel):
+    type: Literal["Feature"] = Field(examples=["Feature"])
+    id: Optional[int] = Field(default=None, examples=[0])
+    geometry: LinerGeometry
+    properties: dict[str, Any] = Field(default=None, examples=[{"params": 1}])
+
+    def as_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "geometry": self.geometry.as_dict(),
+            "properties": self.properties,
+        }
+
+
 class PointFeature(BaseModel):
     type: Literal["Feature"] = Field(examples=["Feature"])
     id: Optional[int] = Field(default=None, examples=[0])
@@ -150,7 +204,19 @@ class PointFeature(BaseModel):
                 _detail={},
                 _input=value,
             )
-        # TODO add validation for fixed_zone
+
+        if value["fixed_zone"] not in [
+            list(custom_ter_zones_map_by_name.keys()) + list(scenario_func_zones_map.keys())
+        ]:
+            raise http_exception(
+                400,
+                msg="Input f 'fixed_zone' property is not valid",
+                _input=value,
+                _detail={
+                    "str": {"available_fixed_zones_names": list(custom_ter_zones_map_by_name.keys())},
+                    "int": {"available_fixed_zones_ids": list(scenario_func_zones_map.keys())},
+                },
+            )
         return value
 
     def as_dict(self) -> dict:

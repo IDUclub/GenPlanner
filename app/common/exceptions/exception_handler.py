@@ -1,15 +1,10 @@
 """Exception handling middleware is defined here."""
 
-import itertools
-import json
 import traceback
 
 from fastapi import FastAPI, HTTPException, Request
-from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
-
-from .http_exception_wrapper import http_exception
 
 
 class ExceptionHandlerMiddleware(BaseHTTPMiddleware):  # pylint: disable=too-few-public-methods

@@ -1,0 +1,12 @@
+{
+  "integer_example": {
+    "1": 0.4,
+    "5": 0.35,
+    "7": 0.25
+  },
+  "string_example": {
+    "residential": 0.4,
+    "agriculture": 0.35,
+    "business": 0.25
+  }
+}
