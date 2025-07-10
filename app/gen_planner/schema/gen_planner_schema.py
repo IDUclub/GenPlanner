@@ -3,7 +3,7 @@
 from pydantic import BaseModel, field_validator
 
 from app.common.exceptions.http_exception import http_exception
-from app.gen_planner.dto.gen_planner_dto import PolygonalFeatureCollection
+from app.common.geometries_dto.geometries import LineStringFeatureCollection, PolygonalFeatureCollection
 
 
 class GenPlannerStartSchema(BaseModel):
@@ -11,12 +11,12 @@ class GenPlannerStartSchema(BaseModel):
 
 
 class GenPlannerResultSchema(BaseModel):
-    zones: PolygonalFeatureCollection | dict
-    roads: FeatureCollection | dict
+    zones: PolygonalFeatureCollection
+    roads: LineStringFeatureCollection
 
     @field_validator("zones", mode="after")
     @classmethod
-    def validate_properties(cls, zones: FeatureCollection) -> FeatureCollection:
+    def validate_properties(cls, zones: PolygonalFeatureCollection) -> PolygonalFeatureCollection:
         """
         Function validates terr_zone is in FeatureCollection properties
         Args:
