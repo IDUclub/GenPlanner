@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Self
 
 import geopandas as gpd
-import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from pyproj import CRS
 from shapely.geometry import shape
