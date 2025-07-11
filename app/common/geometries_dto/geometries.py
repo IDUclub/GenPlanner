@@ -15,13 +15,13 @@ folder_path = Path(__file__).parent.absolute()
 geom_types = ["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"]
 
 
-with open(folder_path / "example_geometry.json", "r") as et:
+with open(folder_path / "examples/example_geometry.json", "r") as et:
     polygon_example_territory = json.load(et)
 
-with open(folder_path / "fixed_points_example.json", "r") as fpe:
+with open(folder_path / "examples/fixed_points_example.json", "r") as fpe:
     fixed_points_example = json.load(fpe)
 
-with open(folder_path / "linestring_geometry.json", "r") as lg:
+with open(folder_path / "examples/linestring_geometry.json", "r") as lg:
     linestring_geom = json.load(lg)
 
 fixed_zones_name = []

@@ -1,16 +1,23 @@
 import json
+from pathlib import Path
 from typing import Optional, Self
 
-import geopandas as gpd
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.common.exceptions.http_exception import http_exception
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection, PolygonalFeatureCollection
 
+folder_path = Path(__file__).parent.absolute()
+
+with open(folder_path / "examples/territory_balance_example.json") as tbe:
+    territory_balance_example = json.load(tbe)
+
 
 class GenPlannerDTO(BaseModel):
+
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
     scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
+    territory_balance: Optional[dict[str | int, float]] = Field(default=None, examples=[territory_balance_example])
     territory: Optional[PolygonalFeatureCollection] = Field(default=None, description="The territory geometry")
     fix_zones: Optional[FixZoneFeatureCollection] = Field(default=None, description="The fix zone geometry")
 
