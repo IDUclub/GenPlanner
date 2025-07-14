@@ -45,6 +45,11 @@ class GenPlannerDTO(BaseModel):
                 _detail=None,
             )
 
+    def get_territory_balance(self):
+        """
+        Function returns a map of territory balance
+        """
+
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):
     profile_scenario: int = Field(..., description="Scenario func zone type")

@@ -37,10 +37,3 @@ class GenPlannerResultSchema(BaseModel):
                     _detail=None,
                 )
         return zones
-
-
-# class GenPlannerSchema(BaseModel):
-#     status: str
-#     progress: int
-#     geojson: Optional[list[GenPlannerResultSchema]] = None
-#     errors: Optional[dict] = None
