@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Self
 
 import geopandas as gpd
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pyproj import CRS
 from shapely.geometry import shape
 from shapely.geometry.base import BaseGeometry
@@ -43,7 +43,9 @@ class Geometry(BaseGeomModel):
     )
     coordinates: list[Any] = Field(
         description="list[float | list] for Geometry in geojson notation",
-        examples=[polygon_example_territory["coordinates"]],
+        examples=[
+            polygon_example_territory["coordinates"],
+        ],
     )
 
     @staticmethod
@@ -64,7 +66,7 @@ class Geometry(BaseGeomModel):
         while type(check) is list:
             check = check[0]
             counter += 1
-        if counter != 1:
+        if counter != enclosure:
             raise http_exception(
                 status_code=400,
                 msg="Input should be a valid Point",
@@ -73,35 +75,33 @@ class Geometry(BaseGeomModel):
             )
         return coordinates
 
-    @field_validator("coordinates", mode="after")
-    @classmethod
-    def validate_coordinates(cls, value: list[Any]) -> list[Any]:
+    @model_validator(mode="after")
+    def validate_coordinates(self) -> Self:
         """
         Validating that the coordinates are valid for the geometry type.
-        Args:
-            value (list[Any]): Coordinates of the geometry.
         Returns:
-            list[Any]: Validated coordinates.
+            Self: with validated coordinates.
         Raises:
             400, if the coordinates do not match the expected level of nesting.
         """
 
-        match cls.type:
+        match self.type:
             case "Point":
-                return cls.validate_geom(value, enclosure=1)
+                self.coordinates = self.validate_geom(self.coordinates, enclosure=1)
             case "MultiPoint" | "LineString":
-                return cls.validate_geom(value, enclosure=2)
+                self.coordinates = self.validate_geom(self.coordinates, enclosure=2)
             case "MultiLineString" | "Polygon":
-                return cls.validate_geom(value, enclosure=3)
+                self.coordinates = self.validate_geom(self.coordinates, enclosure=3)
             case "MultiPolygon":
-                return cls.validate_geom(value, enclosure=4)
+                self.coordinates = self.validate_geom(self.coordinates, enclosure=4)
             case _:
                 raise http_exception(
                     400,
                     "Input should be a valid Geometry type",
-                    _input=value,
+                    _input=self.coordinates,
                     _detail={"available_types": geom_types},
                 )
+        return self
 
     def as_geom(self) -> BaseGeometry:
         return shape(self.model_dump())
@@ -159,32 +159,35 @@ class FixZonePointFeature(Feature):
         if "fixed_zone" not in value:
             raise http_exception(
                 status_code=400,
-                msg="Input should contain f 'fixed_zone' property'",
+                msg="Input should contain 'fixed_zone' property'",
                 _detail={},
                 _input=value,
             )
-
-        if value["fixed_zone"] not in [
+        if value["fixed_zone"] not in (
             list(custom_ter_zones_map_by_name.keys()) + list(scenario_func_zones_map.keys())
-        ]:
+        ):
             raise http_exception(
                 400,
-                msg="Input f 'fixed_zone' property is not valid",
+                msg="'fixed_zone' property is not valid",
                 _input=value,
                 _detail={
                     "str": {"available_fixed_zones_names": list(custom_ter_zones_map_by_name.keys())},
                     "int": {"available_fixed_zones_ids": list(scenario_func_zones_map.keys())},
                 },
             )
+        if isinstance(value["fixed_zone"], str):
+            value["fixed_zone"] = custom_ter_zones_map_by_name[value["fixed_zone"]]
+        else:
+            value["fixed_zone"] = scenario_func_zones_map[value["fixed_zone"]]
         return value
 
 
-class LineStringFeature(BaseModel):
+class LineStringFeature(Feature):
 
     geometry: LinerGeometry
 
 
-class PolygonalFeature(BaseModel):
+class PolygonalFeature(Feature):
 
     geometry: PolygonalGeometry
 
@@ -231,17 +234,21 @@ class FeatureCollection(BaseGeomModel):
 
     type: Literal["FeatureCollection"] = Field(examples=["FeatureCollection"])
     bbox: Optional[list[float]] = Field(
-        examples=[[100.0, 0.0, 105.0, 1.0]], description="Bounding box for geometry collection"
+        default=None, examples=[[100.0, 0.0, 105.0, 1.0]], description="Bounding box for geometry collection"
     )
     features: list[Feature]
-    crs: Optional[FeatureCollectionCRS]
+    crs: Optional[FeatureCollectionCRS] = Field(
+        default=None,
+        examples=[{"type": "name", "properties": {"name": "urn:ogc:def:crs:OGC:1.3:CRS84"}}],
+        description="Coordinate Reference System for the FeatureCollection",
+    )
 
     def as_dict(self) -> dict:
         return {
             "type": self.type,
             "bbox": self.bbox,
             "features": [feature.as_dict() for feature in self.features],
-            "crs": self.crs.as_dict(),
+            "crs": self.crs.as_dict() if self.crs else None,
         }
 
     def as_gdf(self, crs: int | str | CRS | None = 4326) -> gpd.GeoDataFrame:
@@ -260,16 +267,16 @@ class FeatureCollection(BaseGeomModel):
         return gpd.GeoDataFrame.from_features(self.as_dict(), crs=crs)
 
 
-class FixZoneFeatureCollection(BaseModel):
+class FixZoneFeatureCollection(FeatureCollection):
 
     features: list[FixZonePointFeature]
 
 
-class LineStringFeatureCollection(BaseModel):
+class LineStringFeatureCollection(FeatureCollection):
 
     features: list[LineStringFeature]
 
 
-class PolygonalFeatureCollection(BaseModel):
+class PolygonalFeatureCollection(FeatureCollection):
 
     features: list[PolygonalFeature]

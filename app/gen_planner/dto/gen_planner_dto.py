@@ -4,8 +4,11 @@ from typing import Optional, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.common.constants.api_constants import custom_ter_zones_map_by_name, scenario_ter_zones_map
 from app.common.exceptions.http_exception import http_exception
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection, PolygonalFeatureCollection
+from app.gen_planner.python.src.zoning.func_zones import FuncZone
+from app.gen_planner.python.src.zoning.terr_zones import TerritoryZone
 
 folder_path = Path(__file__).parent.absolute()
 
@@ -14,15 +17,26 @@ with open(folder_path / "examples/territory_balance_example.json") as tbe:
 
 
 class GenPlannerDTO(BaseModel):
+    """
+    Base DTO for the GenPlanner service.
+    Attributes:
+        project_id (Optional[int]): The project ID.
+        scenario_id (Optional[int]): The scenario ID.
+        territory (Optional[PolygonalFeatureCollection]): The territory geometry.
+        fix_zones (Optional[FixZoneFeatureCollection]): The fix zone geometry.
+    """
 
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
     scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
-    territory_balance: Optional[dict[str | int, float]] = Field(default=None, examples=[territory_balance_example])
+    profile_scenario: int = Field(..., description="Scenario func zone type")
     territory: Optional[PolygonalFeatureCollection] = Field(default=None, description="The territory geometry")
     fix_zones: Optional[FixZoneFeatureCollection] = Field(default=None, description="The fix zone geometry")
 
     @model_validator(mode="after")
     def validate_territory(self) -> Self:
+        """
+        Functon validates that either a geojson territory or a project ID is provided.
+        """
 
         if self.territory and self.project_id:
             raise http_exception(
@@ -44,31 +58,100 @@ class GenPlannerDTO(BaseModel):
                 },
                 _detail=None,
             )
-
-    def get_territory_balance(self):
-        """
-        Function returns a map of territory balance
-        """
+        return self
 
 
 class GenPlannerFuncZonesDTO(GenPlannerDTO):
-    profile_scenario: int = Field(..., description="Scenario func zone type")
+    """
+    DTO for functional zones in the GenPlanner service.
+    Attributes:
+        territory_balance (Optional[dict[str, float]]): A dictionary representing the balance of functional zones.
+        profile_scenario (int): The scenario type for functional zones.
+    """
 
-    @field_validator("profile_scenario", mode="before")
+    profile_scenario: Optional[int] = Field(default=None, description="Scenario func zone type")
+    territory_balance: Optional[dict[str | int, float]] = Field(
+        default=None,
+        examples=territory_balance_example,
+    )
+
+    @field_validator("territory_balance")
     @classmethod
-    def validate_scenario(cls, value: int) -> int:
-        if value in [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]:
-            return int(value)
-        raise http_exception(
-            400,
-            msg="Scenario should be a valid num",
-            _input={"scenario": value},
-            _detail={"available_values": [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13]},
-        )
+    def validate_territory_balance(cls, value: Optional[dict[str | int, float]]) -> dict[str | int, float] | None:
+        """
+        Function validates that the territory balance is a dict with string or int keys and float values.
+        Args:
+            value ([dict[str | int, float]]): The territory balance to validate.
+        Returns:
+            [dict[str | int, float]]: The validated territory balance.
+        """
+
+        if value is not None:
+            value = {(int(k) if k.isnumeric() else k): v for k, v in value.items()}
+            if (keys_set := set(value.keys())).issubset(set(custom_ter_zones_map_by_name.keys())):
+                return value
+            elif keys_set.issubset(set(scenario_ter_zones_map.keys())):
+                return value
+            else:
+                raise http_exception(
+                    400,
+                    "Territories zones are not supported",
+                    _input=keys_set,
+                    _detail={
+                        "available_values": {
+                            "str_values": list(custom_ter_zones_map_by_name.keys()),
+                            "int_values": list(scenario_ter_zones_map.keys()),
+                        }
+                    },
+                )
+
+    @model_validator(mode="after")
+    def validate_profile_scenario(self) -> Self:
+        """
+        Function validates that the profile scenario is a valid scenario.
+        """
+
+        if self.profile_scenario and self.territory_balance:
+            raise http_exception(
+                400,
+                msg="Can pass either profile_scenario or territory_balance (strict or)",
+                _input={
+                    "profile_scenario": self.profile_scenario,
+                    "territory_balance": self.territory_balance,
+                },
+                _detail={},
+            )
+        elif not self.profile_scenario and not self.territory_balance:
+            raise http_exception(
+                400,
+                msg="Have to pass either profile_scenario or territory_balance (strict or)",
+                _input={
+                    "profile_scenario": self.profile_scenario,
+                    "territory_balance": self.territory_balance,
+                },
+                _detail={},
+            )
+        return self
+
+    def get_territory_balance(self) -> FuncZone:
+        """
+        Function returns a FuncZone object based on the territory balance.
+        Returns:
+            FuncZone: A FuncZone object representing the territory balance.
+        """
+
+        if set(self.territory_balance.keys()).issubset(set(custom_ter_zones_map_by_name.keys())):
+            return FuncZone(
+                {TerritoryZone(k, v): v for k, v in self.territory_balance.items()}, name="user-defined func zone"
+            )
+        else:
+            return FuncZone(
+                {TerritoryZone(scenario_ter_zones_map[k], v): v for k, v in self.territory_balance.items()},
+                name="user-defined func zone",
+            )
 
 
 class GenPlannerTerZonesDTO(GenPlannerDTO):
-    profile_scenario: int = Field(..., description="Scenario ter zone type")
 
     @field_validator("profile_scenario", mode="before")
     @staticmethod

@@ -15,11 +15,8 @@ class AsyncJsonApiHandler:
     ) -> None:
         """
         Initialisation function
-
         Args:
             base_url (str): Base api url
-            auth_header str: Bearer access token
-
         Returns:
             None
         """
@@ -69,9 +66,7 @@ class AsyncJsonApiHandler:
 
         endpoint_url = self.base_url + extra_url
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url=endpoint_url, params=params, headers=headers, timeout=int(config.get_default("MAX_TIMEOUT", 45))
-            ) as response:
+            async with session.get(url=endpoint_url, params=params, headers=headers) as response:
                 result = await self._return_result_or_raise_error(
                     response=response,
                     endpoint_url=endpoint_url,

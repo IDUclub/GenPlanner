@@ -110,15 +110,15 @@ class GenPlannerService:
             GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO: Restored parameters for the generation.
         """
 
-        if not params.scenario_id:
+        if not params.scenario_id and params.project_id:
             proj_data = await self.urban_api_gateway.get_project_info_by_project_id(params.project_id, token)
             params.scenario_id = proj_data["base_scenario"]["id"]
         if params.territory:
-            params.territory = gpd.GeoDataFrame.from_features(params.territory.as_geo_dict(), crs=4326)
+            params.territory = params.territory.as_gdf()
         else:
             params.territory = await self.urban_api_gateway.get_territory_geom_by_project_id(params.project_id, token)
-        if params.fixed_zones:
-            params.fix_zones = gpd.GeoDataFrame.from_features(params.fixed_zones.as_geo_dict(), crs=4326)
+        if params.fix_zones:
+            params.fix_zones = params.fix_zones.as_gdf()
         return params
 
     async def form_genplanner(self, params: GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO, token: str) -> GenPlanner:
@@ -132,9 +132,10 @@ class GenPlannerService:
         """
 
         params = await self.restore_params(params, token)
-        objects = await self.get_all_physical_objects(params.project_id, params.scenario_id, token)
-        genplanner = GenPlanner(params.territory, **objects, dev_mode=True)
-        return genplanner
+        if params.project_id and params.scenario_id:
+            objects = await self.get_all_physical_objects(params.project_id, params.scenario_id, token)
+            return GenPlanner(params.territory, **objects, dev_mode=True)
+        return GenPlanner(params.territory, dev_mode=True)
 
     @staticmethod
     async def form_genplanner_response(
@@ -171,7 +172,7 @@ class GenPlannerService:
         logger.info(
             f"""
                     {action} generation for scenario: {params.scenario_id}, profile_scenario: {params.profile_scenario},
-                    {"fixed_zones" if params.fixed_zones else "no fixed zones"} and 
+                    {"fixed_zones" if params.fix_zones else "no fixed zones"} and 
                     {"project_id" if params.project_id else "user territory"}
                     """
         )
@@ -188,9 +189,8 @@ class GenPlannerService:
 
         await self.log_request_params(params, True)
         genplanner = await self.form_genplanner(params, token)
-        zones, roads = await asyncio.to_thread(
-            genplanner.features2blocks, terr_zone=scenario_ter_zones_map.get(params.profile_scenario)
-        )
+        terr_zone = scenario_ter_zones_map.get(params.profile_scenario)
+        zones, roads = await asyncio.to_thread(genplanner.features2blocks, terr_zone=terr_zone)
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
         return GenPlannerResultSchema(**res)
@@ -207,10 +207,14 @@ class GenPlannerService:
 
         await self.log_request_params(params, True)
         genplanner = await self.form_genplanner(params, token)
+        if params.territory_balance:
+            funczone = params.get_territory_balance()
+        else:
+            funczone = scenario_ter_zones_map.get(params.profile_scenario)
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
-            funczone=scenario_ter_zones_map.get(params.profile_scenario),
-            fixed_terr_zones=params.fixed_zones,
+            funczone=funczone,
+            fixed_terr_zones=params.fix_zones,
         )
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
