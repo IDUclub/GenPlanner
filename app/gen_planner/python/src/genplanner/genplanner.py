@@ -39,6 +39,7 @@ class GenPlanner:
 
     dev_mod: bool = False
 
+    # TODO add intersection geometries checker
     def __init__(
         self,
         features: gpd.GeoDataFrame,

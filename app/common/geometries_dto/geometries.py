@@ -10,6 +10,7 @@ from shapely.geometry.base import BaseGeometry
 
 from app.common.constants.api_constants import custom_ter_zones_map_by_name, scenario_func_zones_map
 from app.common.exceptions.http_exception import http_exception
+from app.gen_planner.python.src.zoning.terr_zones import TerritoryZone
 
 folder_path = Path(__file__).parent.absolute()
 geom_types = ["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"]
@@ -163,22 +164,19 @@ class FixZonePointFeature(Feature):
                 _detail={},
                 _input=value,
             )
-        if value["fixed_zone"] not in (
-            list(custom_ter_zones_map_by_name.keys()) + list(scenario_func_zones_map.keys())
-        ):
-            raise http_exception(
-                400,
-                msg="'fixed_zone' property is not valid",
-                _input=value,
-                _detail={
-                    "str": {"available_fixed_zones_names": list(custom_ter_zones_map_by_name.keys())},
-                    "int": {"available_fixed_zones_ids": list(scenario_func_zones_map.keys())},
-                },
-            )
-        if isinstance(value["fixed_zone"], str):
-            value["fixed_zone"] = custom_ter_zones_map_by_name[value["fixed_zone"]]
-        else:
-            value["fixed_zone"] = scenario_func_zones_map[value["fixed_zone"]]
+        if not isinstance(value["fixed_zone"], TerritoryZone):
+            if value["fixed_zone"] not in (
+                list(custom_ter_zones_map_by_name.keys()) + list(scenario_func_zones_map.keys())
+            ):
+                raise http_exception(
+                    400,
+                    msg="'fixed_zone' property is not valid",
+                    _input=value,
+                    _detail={
+                        "str": {"available_fixed_zones_names": list(custom_ter_zones_map_by_name.keys())},
+                        "int": {"available_fixed_zones_ids": list(scenario_func_zones_map.keys())},
+                    },
+                )
         return value
 
 

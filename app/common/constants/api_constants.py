@@ -48,17 +48,3 @@ custom_ter_zones_map_by_name = {
     "agriculture": terr_zones.agriculture_terr,
     "special": terr_zones.special_terr,
 }
-
-str_int_ter_zones = {
-    1: "residential",
-    4: "industrial",
-    7: "business",
-    2: terr_zones.recreation_terr,
-    6: terr_zones.transport_terr,
-    5: terr_zones.agriculture_terr,
-    3: terr_zones.special_terr,
-    10: "residential",
-    11: "residential",
-    12: "residential",
-    13: "residential",
-}

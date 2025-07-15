@@ -152,6 +152,7 @@ class GenPlannerService:
 
         if "territory_zone" in zones.columns:
             zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
+        zones.drop(columns="func_zone", inplace=True)
         return {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
 
     @staticmethod
@@ -172,7 +173,6 @@ class GenPlannerService:
         logger.info(
             f"""
                     {action} generation for scenario: {params.scenario_id}, profile_scenario: {params.profile_scenario},
-                    {"fixed_zones" if params.fix_zones else "no fixed zones"} and 
                     {"project_id" if params.project_id else "user territory"}
                     """
         )

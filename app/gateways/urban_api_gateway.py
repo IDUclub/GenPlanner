@@ -48,7 +48,7 @@ class UrbanApiGateway:
             results = await asyncio.gather(*requests)
         if as_gdfs:
             try:
-                results = [gpd.GeoDataFrame.from_features(result, crs=4326) for result in results]
+                results = [gpd.GeoDataFrame.from_features(result, crs=4326) for result in results if result["features"]]
             except Exception as e:
                 raise http_exception(
                     500,
