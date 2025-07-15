@@ -1,11 +1,10 @@
 import aiohttp
 from loguru import logger
 
-from app.common.config.config import config
 from app.common.exceptions.http_exception import http_exception
 
 
-class AsyncApiHandler:
+class AsyncJsonApiHandler:
     """
     Class for handling async requests to apies
     """
@@ -16,11 +15,8 @@ class AsyncApiHandler:
     ) -> None:
         """
         Initialisation function
-
         Args:
             base_url (str): Base api url
-            auth_header str: Bearer access token
-
         Returns:
             None
         """
@@ -70,15 +66,10 @@ class AsyncApiHandler:
 
         endpoint_url = self.base_url + extra_url
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url=endpoint_url, params=params, headers=headers, timeout=int(config.get_default("MAX_TIMEOUT", 45))
-            ) as response:
+            async with session.get(url=endpoint_url, params=params, headers=headers) as response:
                 result = await self._return_result_or_raise_error(
                     response=response,
                     endpoint_url=endpoint_url,
                     params=params,
                 )
                 return result
-
-
-urban_api_handler = AsyncApiHandler(config.get("URBAN_API"))

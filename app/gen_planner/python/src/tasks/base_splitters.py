@@ -235,5 +235,5 @@ def _split_polygon(
                     devided_zones = devided_zones.explode(ignore_index=True)
                 else:
                     devided_zones = gpd.GeoDataFrame(geometry=[polygon], crs=local_crs)
-                    devided_zones['zone_name'] = ''
+                    devided_zones["zone_name"] = ""
                 return devided_zones, new_roads
