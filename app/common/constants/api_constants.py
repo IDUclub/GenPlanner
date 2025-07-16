@@ -37,6 +37,7 @@ custom_func_zones_map_by_name = {
     "transport territory": func_zones.transport_func_zone,
     "agriculture territory": func_zones.agricalture_func_zone,
     "special territory": func_zones.special_func_zone,
+    "recreation territory": func_zones.recreation_func_zone,
 }
 
 custom_ter_zones_map_by_name = {

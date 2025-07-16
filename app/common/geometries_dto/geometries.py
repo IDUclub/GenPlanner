@@ -10,6 +10,7 @@ from shapely.geometry.base import BaseGeometry
 
 from app.common.constants.api_constants import custom_ter_zones_map_by_name, scenario_func_zones_map
 from app.common.exceptions.http_exception import http_exception
+from app.gen_planner.python.src.zoning.func_zones import FuncZone
 from app.gen_planner.python.src.zoning.terr_zones import TerritoryZone
 
 folder_path = Path(__file__).parent.absolute()
@@ -164,7 +165,7 @@ class FixZonePointFeature(Feature):
                 _detail={},
                 _input=value,
             )
-        if not isinstance(value["fixed_zone"], TerritoryZone):
+        if not isinstance(value["fixed_zone"], TerritoryZone) and not isinstance(value["fixed_zone"], FuncZone):
             if value["fixed_zone"] not in (
                 list(custom_ter_zones_map_by_name.keys()) + list(scenario_func_zones_map.keys())
             ):

@@ -7,7 +7,7 @@ import pandas as pd
 from loguru import logger
 from shapely import buffer
 
-from app.common.constants.api_constants import scenario_ter_zones_map
+from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
 from app.dependencies import urban_api_gateway
 from app.gateways.urban_api_gateway import UrbanApiGateway
 
@@ -210,7 +210,7 @@ class GenPlannerService:
         if params.territory_balance:
             funczone = params.get_territory_balance()
         else:
-            funczone = scenario_ter_zones_map.get(params.profile_scenario)
+            funczone = scenario_func_zones_map.get(params.profile_scenario)
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
             funczone=funczone,

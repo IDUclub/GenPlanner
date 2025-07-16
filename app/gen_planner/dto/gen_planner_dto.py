@@ -4,7 +4,12 @@ from typing import Optional, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.common.constants.api_constants import custom_ter_zones_map_by_name, scenario_ter_zones_map
+from app.common.constants.api_constants import (
+    custom_func_zones_map_by_name,
+    custom_ter_zones_map_by_name,
+    scenario_func_zones_map,
+    scenario_ter_zones_map,
+)
 from app.common.exceptions.http_exception import http_exception
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection, PolygonalFeatureCollection
 from app.gen_planner.python.src.zoning.func_zones import FuncZone
@@ -138,17 +143,21 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
         """
         Function checks weather all zones in territory_balance matches fixed zones
         """
-
-        fix_zones = self.fix_zones.as_gdf()
-        fixed_zones = set(i for i in fix_zones["fixed_zone"].unique())
-        balanced_zones = set(self.territory_balance.keys())
-        if fixed_zones.difference(balanced_zones):
-            raise http_exception(
-                400,
-                "fixed_zones properties should match all balance zones and be the same type",
-                _input={"fixed_zones": list(fixed_zones), "balance_zones": list(balanced_zones)},
-                _detail=None,
-            )
+        if self.fix_zones:
+            fix_zones = self.fix_zones.as_gdf()
+            fixed_zones = set(i for i in fix_zones["fixed_zone"].unique())
+            if self.territory_balance:
+                balanced_zones = set(self.territory_balance.keys())
+            else:
+                fixed_zones = set([int(i) if i.isnumeric() else i for i in list(fixed_zones)])
+                balanced_zones = set(list(custom_ter_zones_map_by_name.keys()) + list(scenario_ter_zones_map.keys()))
+            if fixed_zones.difference(balanced_zones):
+                raise http_exception(
+                    400,
+                    "fixed_zones properties should match all balance zones and be the same type",
+                    _input={"fixed_zones": list(fixed_zones), "balance_zones": list(balanced_zones)},
+                    _detail=None,
+                )
         return self
 
     @model_validator(mode="after")
@@ -157,29 +166,43 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
         Function validates that the fixed zones feature is in the territory_balance.
         """
 
-        value_gdf = self.fix_zones.as_gdf()
-        func_zone = self.get_territory_balance()
-        value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map({k.name: k for k in func_zone.zones_ratio.keys()})
-        self.fix_zones = FixZoneFeatureCollection(**value_gdf.to_geo_dict())
+        if self.fix_zones:
+            value_gdf = self.fix_zones.as_gdf()
+            if self.territory_balance:
+                func_zone = self.get_territory_balance()
+                value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map({k.name: k for k in func_zone.zones_ratio.keys()})
+            else:
+                value_gdf["fixed_zone"] = value_gdf["fixed_zone"].apply(lambda x: int(x) if x.isnumeric() else x)
+                value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map(
+                    {**custom_ter_zones_map_by_name, **scenario_ter_zones_map}
+                )
+            self.fix_zones = FixZoneFeatureCollection(**value_gdf.to_geo_dict())
         return self
 
     def get_territory_balance(self) -> FuncZone:
         """
+
+
         Function returns a FuncZone object based on the territory balance.
         Returns:
             FuncZone: A FuncZone object representing the territory balance.
         """
 
-        if set(self.territory_balance.keys()).issubset(set(custom_ter_zones_map_by_name.keys())):
-            return FuncZone(
-                # TODO replace with map
-                {TerritoryZone(k): v for k, v in self.territory_balance.items()},
-                name="user-defined func zone",
-            )
+        if self.territory_balance:
+            if set(self.territory_balance.keys()).issubset(set(custom_ter_zones_map_by_name.keys())):
+                return FuncZone(
+                    # TODO replace with map
+                    {TerritoryZone(k): v for k, v in self.territory_balance.items()},
+                    name="user-defined func zone",
+                )
+            else:
+                return FuncZone(
+                    {scenario_ter_zones_map[k]: v for k, v in self.territory_balance.items()},
+                    name="user-defined func zone",
+                )
         else:
-            return FuncZone(
-                {scenario_ter_zones_map[k]: v for k, v in self.territory_balance.items()},
-                name="user-defined func zone",
+            raise http_exception(
+                500, "No territory balance provided", _input={"territory_balance": self.territory_balance}, _detail={}
             )
 
 

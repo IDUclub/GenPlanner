@@ -20,6 +20,15 @@ class FuncZone:
     def __repr__(self):
         return self.__str__()
 
+    def __hash__(self):
+        return hash((self.name, self.min_zone_area))
+
+    def __eq__(self, other):
+        if isinstance(other, self.__class__):
+            return self.__hash__() == other.__hash__()
+        else:
+            return NotImplemented
+
     @staticmethod
     def _recalculate_ratio(zones_ratio):
         # remove 25% for roads
