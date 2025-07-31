@@ -47,3 +47,9 @@ async def run_func_territory_zones_generation(
 ) -> GenPlannerResultSchema:
 
     return await gen_planner_service.run_func_generation(params, token)
+
+
+@gen_planner_router.get("/default/func_ratio", response_model=dict[int, float])
+async def get_func_zone_ratio(zone: int) -> dict[int, float]:
+
+    return await gen_planner_service.get_func_zone_ratio(zone)
