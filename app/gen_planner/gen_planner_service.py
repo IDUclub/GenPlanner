@@ -225,8 +225,11 @@ class GenPlannerService:
     async def get_func_zone_ratio(zone_id: int) -> dict:
 
         func_zone = scenario_func_zones_map[zone_id]
-        revers_ter = {v: k for k, v in scenario_ter_zones_map.items()}
-        return {revers_ter[k]: round(func_zone.zones_ratio[k], 2) for k in func_zone.zones_ratio.keys()}
+        reverse_ter = {}
+        for k, v in scenario_ter_zones_map.items():
+            if v not in reverse_ter:
+                reverse_ter[v] = k
+        return {reverse_ter[k]: round(func_zone.zones_ratio[k], 2) for k in func_zone.zones_ratio.keys()}
 
 
 gen_planner_service = GenPlannerService(urban_api_gateway)
