@@ -140,7 +140,7 @@ class Feature(BaseGeomModel):
     )
     geometry: Geometry
     properties: dict[str, Any] = Field(default=None, examples=[{"params": 1}], description="Properties for geometry")
-    id: Optional[int] = Field(default=None, examples=[0])
+    id: Optional[int | str] = Field(default=None, examples=[0])
 
     def as_dict(self) -> dict:
         return {
