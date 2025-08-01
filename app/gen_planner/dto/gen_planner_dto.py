@@ -4,12 +4,7 @@ from typing import Optional, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.common.constants.api_constants import (
-    custom_func_zones_map_by_name,
-    custom_ter_zones_map_by_name,
-    scenario_func_zones_map,
-    scenario_ter_zones_map,
-)
+from app.common.constants.api_constants import custom_ter_zones_map_by_name, name_id_map, scenario_ter_zones_map
 from app.common.exceptions.http_exception import http_exception
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection, PolygonalFeatureCollection
 from app.gen_planner.python.src.zoning.func_zones import FuncZone
@@ -92,7 +87,7 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
         """
 
         if value is not None:
-            value = {(int(k) if k.isnumeric() else k): v for k, v in value.items()}
+            value = {(int(k) if k.isnumeric() else k): v for k, v in value.items() if v > 0}
             if (keys_set := set(value.keys())).issubset(set(custom_ter_zones_map_by_name.keys())):
                 return value
             elif keys_set.issubset(set(scenario_ter_zones_map.keys())):
@@ -170,7 +165,9 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
             value_gdf = self.fix_zones.as_gdf()
             if self.territory_balance:
                 func_zone = self.get_territory_balance()
-                value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map({k.name: k for k in func_zone.zones_ratio.keys()})
+                ter_zone_map = {k.name: k for k in func_zone.zones_ratio.keys()}
+                ter_zone_map.update({v: ter_zone_map[k] for k, v in name_id_map.items() if k in ter_zone_map.keys()})
+                value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map(ter_zone_map)
             else:
                 value_gdf["fixed_zone"] = value_gdf["fixed_zone"].apply(lambda x: int(x) if x.isnumeric() else x)
                 value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map(
