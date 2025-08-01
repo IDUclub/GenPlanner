@@ -1,0 +1,45 @@
+name: build_and_deploy
+on: workflow_dispatch
+env:
+  IMAGE_NAME: ${{secrets.REGISTRY}}/genplanner_api
+  CONTAINER_NAME: genplanner_api
+
+jobs:
+  build:
+    runs-on: 102_runner
+    outputs:
+      now: ${{steps.date.outputs.NOW}}
+    steps:
+      - name: Set current date as env variable
+        id: date
+        run: echo "NOW=$(date +'%Y-%m-%dT%H-%M-%S')" >> $GITHUB_OUTPUT
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: copy_env
+        env:
+          ENV_PATH: ${{secrets.ENV_PATH}}
+        run: cp "$ENV_PATH"/.env.development ./
+      - name: build
+        env:
+          NOW: ${{steps.date.outputs.now}}
+        run: docker build -t "$IMAGE_NAME":"$NOW" .
+      - name: push_to_registry
+        env:
+          NOW: ${{steps.date.outputs.now}}
+        run: docker push "$IMAGE_NAME":"$NOW"
+  stop_container:
+    runs-on: 102_runner
+    needs: build
+    steps:
+      - name: stop_container
+        run: docker rm -f "$CONTAINER_NAME"
+  run_container:
+    runs-on: 102_runner
+    needs: [build, stop_container]
+    env:
+      NOW: ${{needs.build.outputs.now}}
+    steps:
+      - name: set env
+        run: echo "IMAGE=$IMAGE_NAME:$NOW" >> $GITHUB_ENV
+      - name: run
+        run: docker compose -f docker-compose.actions.yml up -d

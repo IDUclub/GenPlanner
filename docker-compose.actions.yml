@@ -1,0 +1,10 @@
+services:
+  object_effects:
+    image: ${IMAGE}
+    container_name: ${CONTAINER_NAME}
+    ports:
+      - 80:80
+    env_file:
+      - .env.development
+    restart: always
+
