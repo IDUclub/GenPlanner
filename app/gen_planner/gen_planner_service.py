@@ -39,12 +39,11 @@ class GenPlannerService:
         self.urban_api_gateway: UrbanApiGateway = urban_api
 
     async def form_exclude_to_cut(
-        self, project_id: int, scenario_id: int, token: str
+        self, scenario_id: int, token: str
     ) -> dict[Literal["exclude_features"], gpd.GeoDataFrame]:
         """
         Function retrieves water objects to cut from scenario and context.
         Args:
-            project_id (int): ID of the project.
             scenario_id (int): ID of the scenario.
             token (str): User bearer access token.
         Returns:
@@ -53,7 +52,7 @@ class GenPlannerService:
 
         water, context_water = await asyncio.gather(
             self.urban_api_gateway.get_physical_objects_for_scenario(scenario_id, WATER_OBJECTS_IDS, token),
-            self.urban_api_gateway.get_physical_objects_for_context(project_id, WATER_OBJECTS_IDS, token),
+            self.urban_api_gateway.get_physical_objects_for_context(scenario_id, WATER_OBJECTS_IDS, token),
         )
         if not context_water is None:
             context_water = context_water[
@@ -94,7 +93,7 @@ class GenPlannerService:
         """
 
         objects = await asyncio.gather(
-            *[self.form_exclude_to_cut(project_id, scenario_id, token), self.form_roads(scenario_id, token)]
+            *[self.form_exclude_to_cut(scenario_id, token), self.form_roads(scenario_id, token)]
         )
         return {k: v for d in objects for k, v in d.items()}
 

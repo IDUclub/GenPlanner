@@ -136,21 +136,21 @@ class UrbanApiGateway:
 
     async def get_physical_objects_for_context(
         self,
-        project_id: int,
+        scenario_id: int,
         object_ids: list[int],
         token: str | None = None,
     ) -> gpd.GeoDataFrame | pd.DataFrame | None:
         """
         Function to get physical objects for a project
         Args:
-            project_id (int): id of project
+            scenario_id (int): id of project
             object_ids (list[int]): list of object ids
             token (str, optional): token to authenticate with urban api. Defaults to None.
         Returns:
             gpd.GeoDataFrame | None: gdf with physical objects with listed objects ids or none if noe objects found
         """
 
-        url = f"/api/v1/projects/{project_id}/context/geometries_with_all_objects"
+        url = f"/api/v1/scenarios/{scenario_id}/context/geometries_with_all_objects"
         return await self.get_physical_objects(url, object_ids, token)
 
     async def get_physical_objects_for_scenario(
