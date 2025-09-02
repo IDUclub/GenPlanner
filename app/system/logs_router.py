@@ -7,6 +7,7 @@ from app.dependencies import config
 logs_router = APIRouter(prefix="/logs", tags=["logs"])
 
 
+# TODO add env getter and setter
 @logs_router.get("/logs")
 async def get_logs():
     """
