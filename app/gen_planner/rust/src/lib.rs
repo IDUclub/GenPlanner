@@ -223,9 +223,9 @@ pub fn room2area(
     sum_sites_for_rooms.matmul(&site2areas)
 }
 pub fn optimize(
-    vtxl2xy: Vec<f32>,
-    site2xy: Vec<f32>,
-    site2room: Vec<usize>,
+    vtxl2xy: Vec<f32>,  // Границы полигона
+    site2xy: Vec<f32>,  // фиксация точек
+    site2room: Vec<usize>, // 
     site2xy2flag: Vec<f32>,
     room2area_trg: Vec<f32>,
     room_connections: Vec<(usize, usize)>,
