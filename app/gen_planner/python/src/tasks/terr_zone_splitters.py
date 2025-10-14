@@ -56,6 +56,8 @@ def multi_feature2terr_zones_initial(task, **kwargs):
     pivot_point = territory_union.centroid
     angle_rad_to_rotate = polygon_angle(territory_union)
 
+    allow_multipolygon = False
+
     if fixed_terr_zones is None:
         fixed_terr_zones = gpd.GeoDataFrame()
 
@@ -65,17 +67,19 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             fixed_zones_in_poly["geometry"] = fixed_zones_in_poly["geometry"].apply(
                 lambda x: Point(rotate_coords(x.coords, pivot_point, -angle_rad_to_rotate))
             )
-            fixed_zones_in_poly["zone_name"] = fixed_zones_in_poly["fixed_zone"].apply(lambda x: x.name)
-            fixed_zones_in_poly = fixed_zones_in_poly.groupby("zone_name", as_index=False).agg(
-                {"geometry": list, "fixed_zone": "first"}
-            )
+            fixed_zones_in_poly = fixed_zones_in_poly.groupby("fixed_zone", as_index=False).agg({"geometry": list})
             fixed_zones_in_poly = fixed_zones_in_poly.set_index("fixed_zone")["geometry"].to_dict()
+            allow_multipolygon = any(
+                isinstance(geoms, (list, tuple)) and len(geoms) > 1 for geoms in fixed_zones_in_poly.values()
+            )
         else:
             fixed_zones_in_poly = None
     else:
         fixed_zones_in_poly = None
 
-    territory_union = Polygon(rotate_coords(territory_union.exterior.coords, pivot_point, -angle_rad_to_rotate)).simplify(10)
+    territory_union = Polygon(
+        rotate_coords(territory_union.exterior.coords, pivot_point, -angle_rad_to_rotate)
+    ).simplify(10)
 
     proxy_zones, _ = _split_polygon(
         polygon=territory_union,
@@ -83,6 +87,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
         point_radius=poisson_n_radius.get(len(terr_zones), 0.1),
         local_crs=local_crs,
         fixed_zone_points=fixed_zones_in_poly,
+        allow_multipolygon=allow_multipolygon,
     )
 
     # Разворачиваем прокси зоны обратно
@@ -153,7 +158,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
             f"TargetArea_{z}",
         )
     # TODO добавить запрет на нулевые зоны
-
+    # TODO Добавить slack на близость зоны к точке фиксации
     if len(fixed_terr_zones) > 0:
         fixed_terr_zones["zone_name"] = fixed_terr_zones["fixed_zone"].apply(lambda x: x.name)
         zone_strongly_fixed = set(initial_gdf.sjoin(fixed_terr_zones)[["zone_name"]].itertuples(name=None))
@@ -221,6 +226,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
 
     if split_further:
         if len(block_splitter_gdf) > 0:
+            kwargs.update({"from": "feature2terr_zones_initial"})
             new_tasks.append((multi_feature2blocks_initial, (block_splitter_gdf,), kwargs))
         return {"new_tasks": new_tasks}
 
@@ -311,6 +317,7 @@ def feature2terr_zones_initial(task, **kwargs):
 
     # if split further
     kwargs.update({"func_zone": func_zone})
+    kwargs.update({"from": "feature2terr_zones_initial"})
     if len(zones) > 0:
         zones["territory_zone"] = zones["zone_name"]
     task = [(multi_feature2blocks_initial, (zones,), kwargs)]

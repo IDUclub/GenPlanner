@@ -71,14 +71,14 @@ def gdf_splitter(task, **kwargs):
 
 
 def _split_polygon(
-        polygon: Polygon,
-        areas_dict: dict,
-        local_crs: CRS,
-        point_radius: float = 0.1,
-        zone_connections: list = None,
-        fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
-        dev=False,
-        allow_multipolygon=False,
+    polygon: Polygon,
+    areas_dict: dict,
+    local_crs: CRS,
+    point_radius: float = 0.1,
+    zone_connections: list = None,
+    fixed_zone_points: dict = None,  # "zone_name(key_from areas_dict): [Point(x,y)]"
+    dev=False,
+    allow_multipolygon=False,
 ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
     def create_polygons(site2idx, site2room, idx2vtxv, vtxv2xy):
         poly_coords = []
@@ -203,7 +203,7 @@ def _split_polygon(
                 target_areas = devided_zones["area"]
                 area_error = np.mean(np.abs(actual_areas - target_areas))
                 if multipolygon_count < best_multipolygon_count or (
-                        multipolygon_count == best_multipolygon_count and area_error < best_error
+                    multipolygon_count == best_multipolygon_count and area_error < best_error
                 ):
                     new_roads = [
                         (vtxv2xy[x[0]], vtxv2xy[x[1]])
