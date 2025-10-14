@@ -1,3 +1,7 @@
+from functools import total_ordering
+
+
+@total_ordering
 class TerritoryZone:
     min_block_area: float  # m^2
     name: str
@@ -20,6 +24,11 @@ class TerritoryZone:
             return self.__hash__() == other.__hash__()
         else:
             return NotImplemented
+
+    def __lt__(self, other):
+        if not isinstance(other, TerritoryZone):
+            return NotImplemented
+        return (self.name, self.min_block_area) < (other.name, other.min_block_area)
 
 
 minimum_block_area = 80000

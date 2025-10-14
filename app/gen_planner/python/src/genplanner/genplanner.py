@@ -38,7 +38,7 @@ class GenPlanner:
             existing_terr_zones: gpd.GeoDataFrame = None,
             existing_tz_fill_ratio: float = 0.8,
             simplify_geometry: bool = True,
-            simplify_value=10,
+            simplify_value=1,
             parallel=True
     ):
         self.original_territory = features.copy()
@@ -86,16 +86,23 @@ class GenPlanner:
             raise TypeError("No valid geometries in provided GeoDataFrame")
 
         gdf = gdf.to_crs(self.local_crs)
+        gdf = gdf.explode(ignore_index=True)
 
         if len(exclude_features) > 0:
             exclude_features = exclude_features.to_crs(self.local_crs)
-            exclude_features = exclude_features.clip(self.original_territory.to_crs(self.local_crs))
-            exclude_features.geometry = exclude_features.geometry.buffer(0.1, resolution=1)
+            exclude_features = exclude_features.clip(self.original_territory.to_crs(self.local_crs),
+                                                     keep_geom_type=True)
+            exclude_features.geometry = exclude_features.geometry.buffer(1, resolution=2)
+            exclude_features = gpd.GeoDataFrame(geometry=[exclude_features.union_all()], crs=exclude_features.crs)
+            if simplify_geometry:
+                exclude_features.geometry = exclude_features.geometry.simplify(simplify_value)
             gdf = territory_splitter(gdf, exclude_features, return_splitters=False).reset_index(drop=True)
 
         if len(roads) > 0:
             roads = roads.to_crs(self.local_crs)
             roads = roads.explode(ignore_index=True)
+            if simplify_geometry:
+                roads.geometry = roads.geometry.simplify(simplify_value)
             splitters_roads = roads.copy()
             splitters_roads.geometry = splitters_roads.geometry.normalize()
             splitters_roads = splitters_roads[~splitters_roads.geometry.duplicated(keep="first")]
@@ -132,7 +139,9 @@ class GenPlanner:
                     '`terr_zone` column not found in GeoDataFrame, but existing_terr_zones was provided')
 
             existing_terr_zones = existing_terr_zones.to_crs(self.local_crs)
-            existing_terr_zones = existing_terr_zones.clip(gdf)
+            existing_terr_zones = existing_terr_zones.clip(gdf, keep_geom_type=True)
+            if simplify_geometry:
+                existing_terr_zones.geometry = existing_terr_zones.geometry.simplify(simplify_value)
 
             splitted_territory = territory_splitter(gdf, existing_terr_zones, return_splitters=True).reset_index(
                 drop=True)
@@ -162,15 +171,21 @@ class GenPlanner:
 
             existing_terr_zones['area'] = existing_terr_zones.geometry.area
 
-
             # TODO вырезать exclude_objects из existing_terr_zones
             self.existing_terr_zones = existing_terr_zones
             gdf = territory_splitter(gdf, existing_terr_zones, return_splitters=False).reset_index(drop=True)
 
-            target = gdf.geometry.buffer(-0.5, resolution=1)
-            target_boundary = target.boundary.union_all()
+        # if simplify_geometry:
+        #     gdf.geometry = gdf.geometry.simplify(simplify_value)
 
+        if len(existing_terr_zones) > 0:
+            target = gdf.geometry.buffer(-0.1, resolution=1)
+            target_boundary = target.boundary.union_all()
             fix_points = existing_terr_zones.copy()
+            fix_points["__area__"] = fix_points.geometry.area
+            fix_points = fix_points.sort_values(["terr_zone", "__area__"], ascending=[True, False])
+            fix_points = fix_points.drop_duplicates(subset=["terr_zone"], keep="first")
+
             fix_points.geometry = existing_terr_zones.geometry.representative_point().apply(
                 lambda p: nearest_points(p, target_boundary)[1]
             )
@@ -178,9 +193,6 @@ class GenPlanner:
             self.static_fix_points = fix_points
 
         gdf.geometry = gdf.geometry.apply(patch_polygon_interior)
-
-        if simplify_geometry:
-            gdf.geometry = gdf.geometry.simplify(simplify_value)
 
         self.user_valid_roads = roads
         self.source_multipolygon = False if len(gdf) == 1 else True
@@ -213,7 +225,8 @@ class GenPlanner:
         res.drop(columns=["index_right"], inplace=True)
         return res.to_crs(self.original_crs), roads.to_crs(self.original_crs)
 
-    def _check_fixed_zones(self, zones_ratio_dict: dict, fixed_zones: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame:
+    def _prepare_fixed_zones_and_balance_ratios(self, zones_ratio_dict: dict, fixed_zones: gpd.GeoDataFrame | None) -> \
+            tuple[gpd.GeoDataFrame, dict]:
 
         if fixed_zones is None:
             fixed_zones = gpd.GeoDataFrame(columns=["geometry", "fixed_zone"], geometry="geometry", crs=self.local_crs)
@@ -230,11 +243,14 @@ class GenPlanner:
             sfx = self.static_fix_points.copy()
 
             sfx = sfx[sfx["fixed_zone"].isin(valid_zone_keys)]
+
             if len(fixed_zones) > 0:
                 existing_labels = set(fixed_zones["fixed_zone"])
                 sfx = sfx[~sfx["fixed_zone"].isin(existing_labels)]
             if len(sfx) > 0:
-                fixed_zones = pd.concat([fixed_zones, sfx[["fixed_zone", "geometry"]]], ignore_index=True)
+                sfx_joined = gpd.sjoin(sfx, self.territory_to_work_with, how="left", predicate="within")
+                sfx_joined = sfx_joined[~sfx_joined['index_right'].isna()]
+                fixed_zones = pd.concat([fixed_zones, sfx_joined[["fixed_zone", "geometry"]]], ignore_index=True)
 
         fixed_zone_values = set(fixed_zones["fixed_zone"])
         invalid_zones = fixed_zone_values - valid_zone_keys
@@ -251,40 +267,23 @@ class GenPlanner:
             if joined["index_right"].isna().any():
                 raise ValueError("Some points in fixed_zones are located outside the working territory geometries.")
 
-        # pieces = []
-        # if hasattr(self, "territory_to_work_with") and len(self.territory_to_work_with) > 0:
-        #     pieces.extend(list(self.territory_to_work_with.to_crs(self.local_crs).geometry))
-        # if hasattr(self, "existing_terr_zones") and isinstance(self.existing_terr_zones, gpd.GeoDataFrame) and len(
-        #         self.existing_terr_zones) > 0:
-        #     pieces.extend(list(self.existing_terr_zones.to_crs(self.local_crs).geometry))
-        #
-        # if len(pieces) == 0:
-        #     # Фоллбек: если по какой-то причине нет геометрий, не трогаем словарь
-        #     total_area = 0.0
-        # else:
-        #     total_area = unary_union(pieces).area
-        #
-        # # Площадь уже занятых зон по terr_zone
-        # existing_ratios_by_zone: dict[str, float] = {}
-        # if hasattr(self, "existing_terr_zones") and isinstance(self.existing_terr_zones, gpd.GeoDataFrame) and len(
-        #         self.existing_terr_zones) > 0 and total_area > 0:
-        #     # dissolve по terr_zone, чтобы исключить самопересечения и дубли
-        #     dissolved = self.existing_terr_zones.to_crs(self.local_crs).dissolve(by="terr_zone", as_index=False)
-        #     dissolved["__area__"] = dissolved.geometry.area
-        #     for _, row in dissolved.iterrows():
-        #         z = row["terr_zone"]
-        #         a = float(row["__area__"])
-        #         existing_ratios_by_zone[z] = a / total_area
-        #
-        # # Формируем откорректированный словарь: remaining = max(target - existing, 0)
-        # balanced_ratio_dict = {}
-        # for z, target in zones_ratio_dict.items():
-        #     existed = existing_ratios_by_zone.get(z, 0.0)
-        #     remaining = max(float(target) - float(existed), 0.0)
-        #     # слегка округлим для чистых значений, но не до потери точности
-        #     balanced_ratio_dict[z] = round(remaining, 6)
-        #
-        # return fixed_zones, balanced_ratio_dict
+        if len(self.existing_terr_zones) > 0:
+            pieces = list(self.territory_to_work_with.geometry) + list(self.existing_terr_zones.geometry)
+            total_area = unary_union(pieces).area
+            existing_ratios_by_zone: dict[str, float] = {}
+            dissolved = self.existing_terr_zones.dissolve(by="terr_zone", as_index=False)
+            dissolved["__area__"] = dissolved.geometry.area
+            for _, row in dissolved.iterrows():
+                z = row["terr_zone"]
+                a = float(row["__area__"])
+                existing_ratios_by_zone[z] = a / total_area
+            balanced_ratio_dict = {}
+            for z, target in zones_ratio_dict.items():
+                existed = existing_ratios_by_zone.get(z, 0.0)
+                remaining = max(float(target) - float(existed), 0.0)
+                balanced_ratio_dict[z] = remaining
+            zones_ratio_dict = balanced_ratio_dict
+        return fixed_zones, zones_ratio_dict
         #
 
     def split_features(
@@ -303,7 +302,7 @@ class GenPlanner:
         if len(fixed_zones) > 0:
             if zones_ratio_dict is None:
                 raise ValueError("zones_ratio_dict should not be None for generating fixed zones")
-            fixed_zones = self._check_fixed_zones(zones_ratio_dict, fixed_zones)
+            fixed_zones = self._prepare_fixed_zones_and_balance_ratios(zones_ratio_dict, fixed_zones)
         if zones_n is not None:
             zones_ratio_dict = {x: 1 / zones_n for x in range(zones_n)}
         if len(zones_ratio_dict) > 8:
@@ -327,8 +326,9 @@ class GenPlanner:
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=False)
 
     def features2terr_zones2blocks(
-            self, funczone: FuncZone = basic_func_zone, fixed_terr_zones: gpd.GeoDataFrame = None
-    ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
+            self, funczone: FuncZone, fixed_terr_zones: gpd.GeoDataFrame = None
+    ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+
         return self._features2terr_zones(funczone, fixed_terr_zones, split_further=True)
 
     def _features2terr_zones(
@@ -336,10 +336,10 @@ class GenPlanner:
     ) -> (gpd.GeoDataFrame, gpd.GeoDataFrame):
         if not isinstance(funczone, FuncZone):
             raise TypeError("funczone arg must be of type FuncZone")
+        updated_tz, updated_zr = self._prepare_fixed_zones_and_balance_ratios(funczone.zones_ratio, fixed_terr_zones)
+        funczone.zones_ratio = updated_zr
 
-        fixed_terr_zones = self._check_fixed_zones(funczone.zones_ratio, fixed_terr_zones)
-
-        args = self.territory_to_work_with, funczone, split_further, fixed_terr_zones
+        args = self.territory_to_work_with, funczone, split_further, updated_tz
 
         if self.source_multipolygon:
             return self._run(multi_feature2terr_zones_initial, *args)

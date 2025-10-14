@@ -1,3 +1,5 @@
+import time
+
 import geopandas as gpd
 import pandas as pd
 import pulp
@@ -74,6 +76,7 @@ def multi_feature2terr_zones_initial(task, **kwargs):
         fixed_zones_in_poly = None
 
     territory_union = Polygon(rotate_coords(territory_union.exterior.coords, pivot_point, -angle_rad_to_rotate)).simplify(10)
+
     proxy_zones, _ = _split_polygon(
         polygon=territory_union,
         areas_dict=terr_zones["ratio"].to_dict(),
