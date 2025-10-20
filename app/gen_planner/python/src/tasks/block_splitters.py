@@ -26,6 +26,7 @@ def multi_feature2blocks_initial(task, **kwargs):
         zone_kwargs = kwargs.copy()
         zone_kwargs.update({"territory_zone": row.territory_zone})
 
+        # TODO тут каким то образом может прийти геомка без territory zone, так и не отловил почему так
         geometry = row.geometry
         target_area = geometry.area
         min_block_area = row.territory_zone.min_block_area
