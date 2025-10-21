@@ -7,10 +7,11 @@ import pandas as pd
 from loguru import logger
 from shapely import buffer
 
+from app.clients.urban_api_client import UrbanApiClient
 from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
-from app.dependencies import urban_api_gateway
-from app.gateways.urban_api_gateway import UrbanApiGateway
+from app.dependencies import ecodonut_api_client, urban_api_client
 
+from ..clients.ecodonat_api_client import EcodonutApiClient
 from .dto.gen_planner_dto import GenPlannerFuncZonesDTO, GenPlannerTerZonesDTO
 from .python.src.genplanner import GenPlanner
 from .schema.gen_planner_schema import GenPlannerResultSchema
@@ -23,36 +24,41 @@ class GenPlannerService:
     """
     Service for handling GenPlanner operations, including retrieving physical objects,
     restoring parameters, and running generation tasks.
-    This service interacts with the UrbanApiGateway to fetch necessary data and
+    This service interacts with the UrbanApiClient to fetch necessary data and
     processes it to form the GenPlanner object for generating territorial or functional zones.
     Attributes:
-        urban_api_gateway (UrbanApiGateway): Gateway for accessing urban API services.
+        urban_api_client (UrbanApiClient): Client for accessing urban API services.
     """
 
-    def __init__(self, urban_api: UrbanApiGateway):
+    def __init__(self, urban_api: UrbanApiClient, ecodonut_api: EcodonutApiClient):
         """
-        Initializes the GenPlannerService with the provided UrbanApiGateway instance.
+        Initializes the GenPlannerService with the provided UrbanApiClient instance.
         Args:
-            urban_api (UrbanApiGateway): An instance of UrbanApiGateway to interact with urban API services.
+            urban_api (UrbanApiClient): An instance of UrbanApiClient to interact with urban API services.
+            ecodonut_api (EcodonutApiClient): An instance of EcodonutApiClient to interact with urban API services.
         """
 
-        self.urban_api_gateway: UrbanApiGateway = urban_api
+        self.urban_api_client: UrbanApiClient = urban_api
+        self.ecodonut_api_client: EcodonutApiClient = ecodonut_api
 
     async def form_exclude_to_cut(
-        self, scenario_id: int, token: str
+        self, scenario_id: int, project_id: int, angle: int | None, token: str
     ) -> dict[Literal["exclude_features"], gpd.GeoDataFrame]:
         """
         Function retrieves water objects to cut from scenario and context.
         Args:
             scenario_id (int): ID of the scenario.
+            project_id (int): ID of the project.
+            angle (int): The relief angle.
             token (str): User bearer access token.
         Returns:
             dict[Literal["exclude_features"], gpd.GeoDataFrame]: Water objects to cut as dict with gdf.
         """
 
-        water, context_water = await asyncio.gather(
-            self.urban_api_gateway.get_physical_objects_for_scenario(scenario_id, WATER_OBJECTS_IDS, token),
-            self.urban_api_gateway.get_physical_objects_for_context(scenario_id, WATER_OBJECTS_IDS, token),
+        water, context_water, slope_polygons = await asyncio.gather(
+            self.urban_api_client.get_physical_objects_for_scenario(scenario_id, WATER_OBJECTS_IDS, token),
+            self.urban_api_client.get_physical_objects_for_context(scenario_id, WATER_OBJECTS_IDS, token),
+            self.ecodonut_api_client.get_slope_polygons(token, project_id, angle),
         )
         if not context_water is None:
             context_water = context_water[
@@ -64,7 +70,7 @@ class GenPlannerService:
             )
             context_water.to_crs(4326, inplace=True)
             water = pd.concat([water, context_water])
-        return {"exclude_features": water}
+        return {"exclude_features": pd.concat([water, slope_polygons])}
 
     async def form_roads(self, scenario_id: int, token: str) -> dict[Literal["roads"], gpd.GeoDataFrame]:
         """
@@ -76,24 +82,25 @@ class GenPlannerService:
             dict[Literal["roads"], gpd.GeoDataFrame]: Roads objects as dict with gdf.
         """
 
-        roads = await self.urban_api_gateway.get_physical_objects_for_scenario(scenario_id, ROADS_OBJECTS_IDS, token)
+        roads = await self.urban_api_client.get_physical_objects_for_scenario(scenario_id, ROADS_OBJECTS_IDS, token)
         return {"roads": roads}
 
     async def get_all_physical_objects(
-        self, project_id: int, scenario_id: int, token: str
+        self, project_id: int, scenario_id: int, angle: int | None, token: str
     ) -> dict[Literal["exclude_features", "roads"], gpd.GeoDataFrame]:
         """
         Function retrieves all physical objects for the given project and scenario.
         Args:
             project_id (int): ID of the project.
             scenario_id (int): ID of the scenario.
+            angle (int)
             token (str): User bearer access token.
         Returns:
             dict[Literal["exclude_features", "roads"], gpd.GeoDataFrame]: Dictionary containing water and roads GeoDataFrames.
         """
 
         objects = await asyncio.gather(
-            *[self.form_exclude_to_cut(scenario_id, token), self.form_roads(scenario_id, token)]
+            *[self.form_exclude_to_cut(scenario_id, project_id, angle, token), self.form_roads(scenario_id, token)]
         )
         return {k: v for d in objects for k, v in d.items()}
 
@@ -110,12 +117,12 @@ class GenPlannerService:
         """
 
         if not params.scenario_id and params.project_id:
-            proj_data = await self.urban_api_gateway.get_project_info_by_project_id(params.project_id, token)
+            proj_data = await self.urban_api_client.get_project_info_by_project_id(params.project_id, token)
             params.scenario_id = proj_data["base_scenario"]["id"]
         if params.territory:
             params.territory = params.territory.as_gdf()
         else:
-            params.territory = await self.urban_api_gateway.get_territory_geom_by_project_id(params.project_id, token)
+            params.territory = await self.urban_api_client.get_territory_geom_by_project_id(params.project_id, token)
         if params.fix_zones:
             params.fix_zones = params.fix_zones.as_gdf()
         return params
@@ -132,9 +139,11 @@ class GenPlannerService:
 
         params = await self.restore_params(params, token)
         if params.project_id and params.scenario_id:
-            objects = await self.get_all_physical_objects(params.project_id, params.scenario_id, token)
-            return GenPlanner(params.territory, **objects, dev_mode=True)
-        return GenPlanner(params.territory, dev_mode=True)
+            objects = await self.get_all_physical_objects(
+                params.project_id, params.scenario_id, params.elevation_angle, token
+            )
+            return GenPlanner(params.territory, **objects)
+        return GenPlanner(params.territory)
 
     @staticmethod
     async def form_genplanner_response(
@@ -231,4 +240,4 @@ class GenPlannerService:
         return {reverse_ter[k]: round(func_zone.zones_ratio[k], 2) for k in func_zone.zones_ratio.keys()}
 
 
-gen_planner_service = GenPlannerService(urban_api_gateway)
+gen_planner_service = GenPlannerService(urban_api_client, ecodonut_api_client)

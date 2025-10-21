@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Enables env file
-ENV APP_ENV=development
+ENV APP_ENV=production
 
 RUN apt-get update && apt-get install -y \
     python3 \

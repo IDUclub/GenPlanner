@@ -28,6 +28,13 @@ class GenPlannerDTO(BaseModel):
 
     project_id: Optional[int] = Field(default=None, examples=[72], description="The project ID")
     scenario_id: Optional[int] = Field(default=None, examples=[72], description="The scenario ID")
+    elevation_angle: Optional[int] = Field(
+        ge=0,
+        le=90,
+        default=None,
+        examples=[5],
+        description="The elevation angle in degrees. All polygons with equal or greater angle are excluded from generation.",
+    )
     profile_scenario: int = Field(..., description="Scenario func zone type")
     territory: Optional[PolygonalFeatureCollection] = Field(default=None, description="The territory geometry")
     fix_zones: Optional[FixZoneFeatureCollection] = Field(default=None, description="The fix zone geometry")

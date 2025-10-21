@@ -8,25 +8,26 @@ from shapely.geometry import shape
 from app.common.api_handlers.json_api_handler import AsyncJsonApiHandler
 from app.common.exceptions.http_exception import http_exception
 
+from .api_client import ApiClient
 
-class UrbanApiGateway:
+
+class UrbanApiClient(ApiClient):
     """
     Class for retrieving data from urban api for gen planner
     This class provides methods to interact with the Urban API, specifically for retrieving project information.
     Attributes:
-        urban_extractor (AsyncApiHandler): Instance of AsyncApiHandler for making API requests.
+        urban_api_handler (AsyncApiHandler): Instance of AsyncApiHandler for making API requests.
     """
 
-    def __init__(self, urban_api_url: str, max_async_extractions: int = 40):
+    def __init__(self, urban_api_json_handler: AsyncJsonApiHandler, max_async_extractions: int = 40):
         """
-        Function initializes the UrbanApiGateway with an AsyncJsonApiHandler instance.
+        Function initializes the UrbanApiClient with an AsyncJsonApiHandler instance.
         Args:
-            urban_api_url (str): An instance of AsyncJsonApiHandler to handle API requests.
+            urban_api_json_handler (str): An instance of AsyncJsonApiHandler to handle API requests.
             max_async_extractions (int): Maximum number of asynchronous extractions allowed. Defaults to 40.
         """
 
-        self.urban_extractor: AsyncJsonApiHandler = AsyncJsonApiHandler(urban_api_url)
-        self.max_async_extractions: int = max_async_extractions
+        super().__init__(urban_api_json_handler, max_async_extractions)
 
     async def extract_several_requests(self, requests: list[Awaitable], as_gdfs: bool = False) -> list[list | dict]:
         """
@@ -73,7 +74,7 @@ class UrbanApiGateway:
         """
 
         url = f"/api/v1/projects/{project_id}"
-        response = await self.urban_extractor.get(url, headers={"Authorization": f"Bearer {token}"} if token else None)
+        response = await self.api_handler.get(url, headers={"Authorization": f"Bearer {token}"} if token else None)
         return response
 
     async def get_territory_geom_by_project_id(
@@ -91,7 +92,7 @@ class UrbanApiGateway:
         """
 
         url = f"/api/v1/projects/{project_id}/territory"
-        response = await self.urban_extractor.get(
+        response = await self.api_handler.get(
             extra_url=url,
             headers={"Authorization": f"Bearer {token}"} if token else None,
         )
@@ -119,7 +120,7 @@ class UrbanApiGateway:
         """
 
         requests = [
-            self.urban_extractor.get(
+            self.api_handler.get(
                 extra_url=url,
                 params={
                     "physical_object_type_id": object_id,
