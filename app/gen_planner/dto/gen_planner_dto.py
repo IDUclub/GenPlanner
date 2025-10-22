@@ -44,7 +44,7 @@ class GenPlannerDTO(BaseModel):
         examples=[5],
         description="The elevation angle in degrees. All polygons with equal or greater angle are excluded from generation.",
     )
-    profile_scenario: int = Field(..., description="Scenario func zone type")
+    profile_scenario: int = Field(description="Scenario func zone type")
     territory: Optional[PolygonalFeatureCollection] = Field(default=None, description="The territory geometry")
     fix_zones: Optional[FixZoneFeatureCollection] = Field(default=None, description="The fix zone geometry")
 
@@ -86,11 +86,23 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
     """
 
     profile_scenario: Optional[int] = Field(default=None, description="Scenario func zone type")
+    min_block_area: Optional[dict[int, float]] = Field(
+        default=None, description="Map for each ter zone min block area."
+    )
     functional_zones: Optional[FuncZonesInfoDTO] = Field(default=None, description="The functional zones info")
     territory_balance: Optional[dict[str | int, float]] = Field(
         default=None,
         examples=territory_balance_example,
     )
+
+    # TODO finish validator
+    @field_validator("min_block_area", mode="before")
+    @classmethod
+    def assign_custom_ter_zone_name(cls):
+
+        if cls.min_block_area:
+            return cls
+        return cls
 
     @field_validator("territory_balance")
     @classmethod
@@ -174,15 +186,16 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
         return self
 
     @model_validator(mode="after")
-    def validate_fixed_zones(self) -> Self:
+    @classmethod
+    def validate_fixed_zones(cls) -> Self:
         """
         Function validates that the fixed zones feature is in the territory_balance.
         """
 
-        if self.fix_zones:
-            value_gdf = self.fix_zones.as_gdf()
-            if self.territory_balance:
-                func_zone = self.get_territory_balance()
+        if cls.fix_zones:
+            value_gdf = cls.fix_zones.as_gdf()
+            if cls.territory_balance:
+                func_zone = cls.get_territory_balance()
                 ter_zone_map = {k.name: k for k in func_zone.zones_ratio.keys()}
                 ter_zone_map.update({v: ter_zone_map[k] for k, v in name_id_map.items() if k in ter_zone_map.keys()})
                 value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map(ter_zone_map)
@@ -191,33 +204,33 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
                 value_gdf["fixed_zone"] = value_gdf["fixed_zone"].map(
                     {**custom_ter_zones_map_by_name, **scenario_ter_zones_map}
                 )
-            self.fix_zones = FixZoneFeatureCollection(**value_gdf.to_geo_dict())
-        return self
+            cls.fix_zones = FixZoneFeatureCollection(**value_gdf.to_geo_dict())
+        return cls
 
-    def get_territory_balance(self) -> FuncZone:
+    @model_validator(mode="after")
+    @classmethod
+    def get_territory_balance(cls) -> FuncZone:
         """
-
-
         Function returns a FuncZone object based on the territory balance.
         Returns:
             FuncZone: A FuncZone object representing the territory balance.
         """
 
-        if self.territory_balance:
-            if set(self.territory_balance.keys()).issubset(set(custom_ter_zones_map_by_name.keys())):
+        if cls.territory_balance:
+            if set(cls.territory_balance.keys()).issubset(set(custom_ter_zones_map_by_name.keys())):
                 return FuncZone(
                     # TODO replace with map
-                    {TerritoryZone(k): v for k, v in self.territory_balance.items()},
+                    {TerritoryZone(k): v for k, v in cls.territory_balance.items()},
                     name="user-defined func zone",
                 )
             else:
                 return FuncZone(
-                    {scenario_ter_zones_map[k]: v for k, v in self.territory_balance.items()},
+                    {scenario_ter_zones_map[k]: v for k, v in cls.territory_balance.items()},
                     name="user-defined func zone",
                 )
         else:
             raise http_exception(
-                500, "No territory balance provided", _input={"territory_balance": self.territory_balance}, _detail={}
+                400, "No territory balance provided", _input={"territory_balance": cls.territory_balance}, _detail={}
             )
 
 
