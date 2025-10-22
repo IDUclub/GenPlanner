@@ -38,12 +38,13 @@ class EcodonutApiClient(ApiClient):
             angle (int | None): The angle to retrieve polygons from. Defaults to None.
         Returns:
             gpd.GeoDataFrame: A GeoDataFrame containing the slope polygons.
+            If no angle (None) is provided, returns empty gpd.GeoDataFrame.
         Raises:
             HTTPException: Any HTTP exception raised by Ecodonut API   .
         """
 
         if isinstance(angle, NoneType):
-            return gpd.GeoDataFrame(crs=4326)
+            return gpd.GeoDataFrame()
         response = await self.api_handler.get(
             f"/ecodonut/{project_id}/slope_polygons",
             headers={"Authorization": f"Bearer {token}"},

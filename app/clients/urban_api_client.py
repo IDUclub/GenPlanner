@@ -151,8 +151,9 @@ class UrbanApiClient(ApiClient):
             gpd.GeoDataFrame | None: gdf with physical objects with listed objects ids or none if noe objects found
         """
 
-        url = f"/api/v1/scenarios/{scenario_id}/context/geometries_with_all_objects"
-        return await self.get_physical_objects(url, object_ids, token)
+        return await self.get_physical_objects(
+            f"/api/v1/scenarios/{scenario_id}/context/geometries_with_all_objects", object_ids, token
+        )
 
     async def get_physical_objects_for_scenario(
         self,
@@ -172,3 +173,35 @@ class UrbanApiClient(ApiClient):
 
         url = f"/api/v1/scenarios/{scenario_id}/physical_objects_with_geometry"
         return await self.get_physical_objects(url, object_ids, token)
+
+    async def get_functional_zones(self, token: str | None, scenario_id: int, **kwargs) -> gpd.GeoDataFrame:
+        """
+        Function retrieves functional zones from urban api.
+        Args:
+            token (str, optional): token to authenticate with urban api. Defaults to None.
+            scenario_id (int): id of scenario.
+            **kwargs: keyword arguments to pass to urban api. Currently available are:
+
+                - year (int): function zones source year
+                - source (int): function zones source name (Literal["user", "OSM", "PZZ"])
+                - functional_zone_type_id: function zones source type ID
+        Returns:
+            gpd.GeoDataFrame: GeoDataFrame with functional zones.
+        Raises:
+            Any HTTP from urban api will be raised as http_exception.
+        """
+
+        response = await self.api_handler.get(
+            f"/api/v1/scenarios/{scenario_id}/functional_zones",
+            headers={"Authorization": f"Bearer {token}"} if token else None,
+            params=kwargs,
+        )
+        try:
+            return gpd.GeoDataFrame.from_features(response, crs=4326)
+        except Exception as e:
+            raise http_exception(
+                500,
+                "Error during parsing functional zones to GeoDataFrame",
+                _input={"response": response, "crs": 4326},
+                _detail={"error": repr(e)},
+            ) from e

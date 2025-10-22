@@ -142,6 +142,19 @@ class GenPlannerService:
             objects = await self.get_all_physical_objects(
                 params.project_id, params.scenario_id, params.elevation_angle, token
             )
+            if isinstance(params, GenPlannerFuncZonesDTO):
+                func_zones = await self.urban_api_client.get_functional_zones(
+                    token,
+                    params.scenario_id,
+                    year=params.functional_zones.year,
+                    source=params.functional_zones.source,
+                )
+                func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
+                func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
+                func_zones = func_zones[
+                    func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
+                ].copy()
+                return GenPlanner(params.territory, **objects, existing_terr_zones=func_zones)
             return GenPlanner(params.territory, **objects)
         return GenPlanner(params.territory)
 

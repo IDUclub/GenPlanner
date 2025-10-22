@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional, Self
+from typing import Literal, Optional, Self
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -14,6 +14,15 @@ folder_path = Path(__file__).parent.absolute()
 
 with open(folder_path / "examples/territory_balance_example.json") as tbe:
     territory_balance_example = json.load(tbe)
+
+
+class FuncZonesInfoDTO(BaseModel):
+
+    year: int = Field(examples=[2025], description="Year of functional zones")
+    source: Literal["PZZ", "OSM", "User"] = Field(examples=["User"], description="Source of functional zones")
+    fixed_functional_zones_ids: list[int] = Field(
+        examples=[1619712], description="IDs of functional zones to take into account"
+    )
 
 
 class GenPlannerDTO(BaseModel):
@@ -77,6 +86,7 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
     """
 
     profile_scenario: Optional[int] = Field(default=None, description="Scenario func zone type")
+    functional_zones: Optional[FuncZonesInfoDTO] = Field(default=None, description="The functional zones info")
     territory_balance: Optional[dict[str | int, float]] = Field(
         default=None,
         examples=territory_balance_example,
@@ -111,6 +121,7 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
                         }
                     },
                 )
+        return value
 
     @model_validator(mode="after")
     def validate_profile_scenario(self) -> Self:
