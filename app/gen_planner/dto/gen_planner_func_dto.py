@@ -18,15 +18,23 @@ class FuncZonesInfoDTO(BaseModel):
     )
 
 
-class GenPlannerDTO(BaseModel):
+class GenPlannerFuncZonesDTO(BaseModel):
     """
-    Base DTO for the GenPlanner service.
+    DTO for functional zones in the GenPlanner service.
     Attributes:
         project_id (Optional[int]): The project ID.
         scenario_id (Optional[int]): The scenario ID.
         fix_zones (Optional[FixZoneFeatureCollection]): The fix zone geometry.
+        territory_balance (Optional[dict[str, float]]): A dictionary representing the balance of functional zones.
     """
 
+    # service fields
+    _custom_id_ter_zone_map = None
+    _custom_func_zone = None
+    _territory_gdf: gpd.GeoDataFrame | None = None
+    _fix_zones_gdf: gpd.GeoDataFrame | None = None
+
+    # request params
     project_id: int = Field(examples=[120], description="The project ID")
     scenario_id: int = Field(examples=[835], description="The scenario ID")
     elevation_angle: int | None = Field(
@@ -36,27 +44,9 @@ class GenPlannerDTO(BaseModel):
         examples=[5],
         description="The elevation angle in degrees. All polygons with equal or greater angle are excluded from generation.",
     )
-    profile_scenario: int = Field(description="Scenario func zone type")
     fix_zones: Optional[FixZoneFeatureCollection] = Field(
         default=None, description="Fixed zone geometry with zone attribute"
     )
-
-
-class GenPlannerFuncZonesDTO(GenPlannerDTO):
-    """
-    DTO for functional zones in the GenPlanner service.
-    Attributes:
-        territory_balance (Optional[dict[str, float]]): A dictionary representing the balance of functional zones.
-        profile_scenario (int): The scenario type for functional zones.
-    """
-
-    # service fields
-    _custom_id_ter_zone_map = None
-    _custom_func_zone = None
-    _territory_gdf: gpd.GeoDataFrame | None = None
-    _fix_zones_gdf: gpd.GeoDataFrame | None = None
-
-    profile_scenario: Optional[int] = Field(default=None, description="Scenario func zone type")
     min_block_area: Optional[dict[int, float]] = Field(
         default=None, description="Map for each ter zone min block area."
     )
@@ -65,7 +55,6 @@ class GenPlannerFuncZonesDTO(GenPlannerDTO):
         description="Balance of functional zones by ID",
     )
 
-    # TODO finish validator
     @model_validator(mode="after")
     def assign_custom_ter_zone_name(self) -> Self:
 

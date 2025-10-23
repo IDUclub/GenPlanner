@@ -7,12 +7,13 @@ import pandas as pd
 from loguru import logger
 from shapely import buffer
 
+from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
 from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
 from app.dependencies import ecodonut_api_client, urban_api_client
 
-from ..clients.ecodonat_api_client import EcodonutApiClient
-from .dto.gen_planner_dto import GenPlannerFuncZonesDTO
+from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
+from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from .python.src.genplanner import GenPlanner
 from .schema.gen_planner_schema import GenPlannerResultSchema
 
@@ -142,7 +143,20 @@ class GenPlannerService:
         func_zones = func_zones[
             func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
         ].copy()
-        return GenPlanner(params._territory_gdf, **objects, existing_terr_zones=func_zones)
+        return GenPlanner(params._territory_gdf, **objects, existing_terr_zones=func_zones, simplify_value=10)
+
+    async def form_custom_genplanner(self, params: GenPlannerCustomDTO):
+        """
+        Function forms GenPlanner object with the given parameters.
+        Args:
+            params (GenPlannerCustomDTO): Parameters for the generation.
+        Returns:
+            GenPlanner: GenPlanner object with the given parameters.
+        Raises:
+            Any from GenPlanner initialization
+        """
+
+        return GenPlanner(params._territory_gdf, simplify_value=10)
 
     @staticmethod
     async def form_genplanner_response(
@@ -179,8 +193,7 @@ class GenPlannerService:
             action = "Completed"
         logger.info(
             f"""
-                    {action} generation for scenario: {params.scenario_id}, profile_scenario: {params.profile_scenario},
-                    {"project_id" if params.project_id else "user territory"}
+                    {action} generation for params {params.model_dump()}
                     """
         )
 
@@ -203,6 +216,24 @@ class GenPlannerService:
         )
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
+        return GenPlannerResultSchema(**res)
+
+    async def run_custom_func_generation(self, params: GenPlannerCustomDTO) -> GenPlannerResultSchema:
+        """
+        Function runs the functional generation with the given parameters.
+        Args:
+            params (GenPlannerCustomDTO): Parameters for the functional generation.
+        Returns:
+            GenPlannerResultSchema: Result of the functional generation.
+        """
+
+        await self.log_request_params(params, True)
+        genplanner = await self.form_custom_genplanner(params)
+        zones, roads = await asyncio.to_thread(
+            genplanner.features2terr_zones2blocks,
+            funczone=params._func_zone,
+        )
+        res = await self.form_genplanner_response(zones, roads)
         return GenPlannerResultSchema(**res)
 
     # TODO revise for more convenient way later
