@@ -10,7 +10,6 @@ from shapely import buffer
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
 from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
-from app.dependencies import ecodonut_api_client, urban_api_client
 
 from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
@@ -246,6 +245,3 @@ class GenPlannerService:
             if v not in reverse_ter:
                 reverse_ter[v] = k
         return {reverse_ter[k]: round(func_zone.zones_ratio[k], 2) for k in func_zone.zones_ratio.keys()}
-
-
-gen_planner_service = GenPlannerService(urban_api_client, ecodonut_api_client)

@@ -87,8 +87,6 @@ class Geometry(BaseGeomModel):
             400, if the coordinates do not match the expected level of nesting.
         """
 
-        print(self.type, self.coordinates)
-
         match self.type:
             case "Point":
                 self.coordinates = self.validate_geom(self.coordinates, enclosure=1)
