@@ -12,7 +12,7 @@ from app.common.constants.api_constants import scenario_func_zones_map, scenario
 from app.dependencies import ecodonut_api_client, urban_api_client
 
 from ..clients.ecodonat_api_client import EcodonutApiClient
-from .dto.gen_planner_dto import GenPlannerFuncZonesDTO, GenPlannerTerZonesDTO
+from .dto.gen_planner_dto import GenPlannerFuncZonesDTO
 from .python.src.genplanner import GenPlanner
 from .schema.gen_planner_schema import GenPlannerResultSchema
 
@@ -104,59 +104,45 @@ class GenPlannerService:
         )
         return {k: v for d in objects for k, v in d.items()}
 
-    async def restore_params(
-        self, params: GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO, token: str
-    ) -> GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO:
+    async def restore_params(self, params: GenPlannerFuncZonesDTO, token: str) -> GenPlannerFuncZonesDTO:
         """
         Function restores parameters for the generation.
         Args:
-            params (GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO): Parameters for the generation.
+            params (GenPlannerFuncZonesDTO): Parameters for the generation.
             token (str): User bearer access token.
         Returns:
-            GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO: Restored parameters for the generation.
+            GenPlannerFuncZonesDTO: Restored parameters for the generation.
         """
 
-        if not params.scenario_id and params.project_id:
-            proj_data = await self.urban_api_client.get_project_info_by_project_id(params.project_id, token)
-            params.scenario_id = proj_data["base_scenario"]["id"]
-        if params.territory:
-            params.territory = params.territory.as_gdf()
-        else:
-            params.territory = await self.urban_api_client.get_territory_geom_by_project_id(params.project_id, token)
-        if params.fix_zones:
-            params.fix_zones = params.fix_zones.as_gdf()
+        params._territory_gdf = await self.urban_api_client.get_territory_geom_by_project_id(params.project_id, token)
         return params
 
-    async def form_genplanner(self, params: GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO, token: str) -> GenPlanner:
+    async def form_genplanner(self, params: GenPlannerFuncZonesDTO, token: str) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
         Args:
-            params (GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO): Parameters for the generation.
+            params (GenPlannerFuncZonesDTO): Parameters for the generation.
             token (str): User bearer access token.
         Returns:
             GenPlanner: GenPlanner object with the given parameters.
         """
 
         params = await self.restore_params(params, token)
-        if params.project_id and params.scenario_id:
-            objects = await self.get_all_physical_objects(
-                params.project_id, params.scenario_id, params.elevation_angle, token
-            )
-            if isinstance(params, GenPlannerFuncZonesDTO):
-                func_zones = await self.urban_api_client.get_functional_zones(
-                    token,
-                    params.scenario_id,
-                    year=params.functional_zones.year,
-                    source=params.functional_zones.source,
-                )
-                func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
-                func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
-                func_zones = func_zones[
-                    func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
-                ].copy()
-                return GenPlanner(params.territory, **objects, existing_terr_zones=func_zones)
-            return GenPlanner(params.territory, **objects)
-        return GenPlanner(params.territory)
+        objects = await self.get_all_physical_objects(
+            params.project_id, params.scenario_id, params.elevation_angle, token
+        )
+        func_zones = await self.urban_api_client.get_functional_zones(
+            token,
+            params.scenario_id,
+            year=params.functional_zones.year,
+            source=params.functional_zones.source,
+        )
+        func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
+        func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
+        func_zones = func_zones[
+            func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
+        ].copy()
+        return GenPlanner(params._territory_gdf, **objects, existing_terr_zones=func_zones)
 
     @staticmethod
     async def form_genplanner_response(
@@ -177,11 +163,11 @@ class GenPlannerService:
         return {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
 
     @staticmethod
-    async def log_request_params(params: GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO, start: bool) -> None:
+    async def log_request_params(params: GenPlannerFuncZonesDTO, start: bool) -> None:
         """
         Function logs the request parameters for the generation.
         Args:
-            params (GenPlannerTerZonesDTO | GenPlannerFuncZonesDTO): Parameters for the generation.
+            params (GenPlannerFuncZonesDTO): Parameters for the generation.
             start (bool): Flag indicating whether the generation is starting or completed.
         Returns:
             None
@@ -198,24 +184,6 @@ class GenPlannerService:
                     """
         )
 
-    async def run_ter_generation(self, params: GenPlannerTerZonesDTO, token: str) -> GenPlannerResultSchema:
-        """
-        Function runs the territorial generation with the given parameters.
-        Args:
-            params (GenPlannerTerZonesDTO): Parameters for the territorial generation.
-            token (str): User bearer access token.
-        Returns:
-            GenPlannerResultSchema: Result of the territorial generation.
-        """
-
-        await self.log_request_params(params, True)
-        genplanner = await self.form_genplanner(params, token)
-        terr_zone = scenario_ter_zones_map.get(params.profile_scenario)
-        zones, roads = await asyncio.to_thread(genplanner.features2blocks, terr_zone=terr_zone)
-        res = await self.form_genplanner_response(zones, roads)
-        await self.log_request_params(params, False)
-        return GenPlannerResultSchema(**res)
-
     async def run_func_generation(self, params: GenPlannerFuncZonesDTO, token: str) -> GenPlannerResultSchema:
         """
         Function runs the functional generation with the given parameters.
@@ -228,14 +196,10 @@ class GenPlannerService:
 
         await self.log_request_params(params, True)
         genplanner = await self.form_genplanner(params, token)
-        if params.territory_balance:
-            funczone = params.get_territory_balance()
-        else:
-            funczone = scenario_func_zones_map.get(params.profile_scenario)
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
-            funczone=funczone,
-            fixed_terr_zones=params.fix_zones,
+            funczone=params._custom_func_zone,
+            fixed_terr_zones=params._fix_zones_gdf,
         )
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
