@@ -23,7 +23,7 @@ async def init_dependencies(app: FastAPI):
 
     # logger initialization
     app.state.log_path = Path().resolve().absolute() / app.state.config.get("LOG_FILE")
-    init_logger(app.state.log_path)
+    init_logger(app.state.log_path, app.state.config.get("LOG_LEVEL"))
 
     # gen_planner_service initialisation
     urban_api_handler = AsyncJsonApiHandler(app.state.config.get("URBAN_API"))

@@ -7,6 +7,7 @@ class ApiClient:
     This class provides methods to interact with the Urban API, specifically for retrieving project information.
     Attributes:
         api_handler (AsyncApiHandler): Instance of AsyncApiHandler for making API requests.
+        max_async_extractions (int): Maximum number of asynchronous extractions allowed. Defaults to 40.
     """
 
     def __init__(self, api_json_handler: AsyncJsonApiHandler, max_async_extractions: int = 40):
