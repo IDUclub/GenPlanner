@@ -16,7 +16,8 @@ class UrbanApiClient(ApiClient):
     Class for retrieving data from urban api for gen planner
     This class provides methods to interact with the Urban API, specifically for retrieving project information.
     Attributes:
-        urban_api_handler (AsyncApiHandler): Instance of AsyncApiHandler for making API requests.
+        api_json_handler – An instance of AsyncJsonApiHandler to handle API requests.
+        max_async_extractions – Maximum number of asynchronous extractions allowed. Defaults to 40.
     """
 
     def __init__(self, urban_api_json_handler: AsyncJsonApiHandler, max_async_extractions: int = 40):

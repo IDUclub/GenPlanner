@@ -28,6 +28,7 @@ class GenPlannerService:
     processes it to form the GenPlanner object for generating territorial or functional zones.
     Attributes:
         urban_api_client (UrbanApiClient): Client for accessing urban API services.
+        ecodonut_api (EcodonutApiClient): An instance of EcodonutApiClient to interact with urban API services.
     """
 
     def __init__(self, urban_api: UrbanApiClient, ecodonut_api: EcodonutApiClient):
@@ -141,10 +142,11 @@ class GenPlannerService:
         func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
         func_zones = func_zones[
             func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
-        ].copy()
+        ]
         return GenPlanner(params._territory_gdf, **objects, existing_terr_zones=func_zones, simplify_value=10)
 
-    async def form_custom_genplanner(self, params: GenPlannerCustomDTO):
+    @staticmethod
+    async def form_custom_genplanner( params: GenPlannerCustomDTO) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
         Args:
