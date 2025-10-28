@@ -225,7 +225,7 @@ pub fn room2area(
 pub fn optimize(
     vtxl2xy: Vec<f32>,  // Границы полигона
     site2xy: Vec<f32>,  // фиксация точек
-    site2room: Vec<usize>, // 
+    site2room: Vec<usize>, // Принадлежность точки к комнате
     site2xy2flag: Vec<f32>,
     room2area_trg: Vec<f32>,
     room_connections: Vec<(usize, usize)>,

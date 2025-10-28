@@ -55,13 +55,4 @@ class EcodonutApiClient(ApiClient):
             raise
         except Exception as e:
             logger.error(e)
-            raise http_exception(
-                500,
-                "Error during parsing slope data from ecodonut api.",
-                _input={
-                    "token": token,
-                    "project_id": project_id,
-                    "angle": angle,
-                },
-                _detail=repr(e),
-            ) from e
+            raise

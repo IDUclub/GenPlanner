@@ -33,4 +33,4 @@ async def init_dependencies(app: FastAPI):
         ecodonut_api_handler, int(app.state.config.get("MAX_API_ASYNC_EXTRACTIONS"))
     )
     app.state.genplanner_service = GenPlannerService(urban_api_client, ecodonut_api_client)
-    logger.info("Initializing dependencies")
+    logger.info("Initialized app dependencies")

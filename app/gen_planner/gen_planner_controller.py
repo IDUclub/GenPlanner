@@ -22,7 +22,7 @@ async def get_available_zones_profiles():
     :return: list of available func zones to run in genplanner by ids
     """
 
-    return [i for i in scenario_func_zones_map]
+    return list(scenario_func_zones_map)
 
 
 @gen_planner_router.post(

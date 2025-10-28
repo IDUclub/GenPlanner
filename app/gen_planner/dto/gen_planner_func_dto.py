@@ -22,9 +22,12 @@ class GenPlannerFuncZonesDTO(BaseModel):
     """
     DTO for functional zones in the GenPlanner service.
     Attributes:
-        project_id (Optional[int]): The project ID.
-        scenario_id (Optional[int]): The scenario ID.
+        project_id (int): The project ID.
+        scenario_id (int): The scenario ID.
+        elevation_angle (Optional[int]): The elevation angle in degrees.
         fix_zones (Optional[FixZoneFeatureCollection]): The fix zone geometry.
+        min_block_area (Optional[dict[int, float]): Minimum block area for each generating functional zone.
+        functional_zones (Optional[FuncZonesInfoDTO]): The functional zones info to make an amendment on.
         territory_balance (Optional[dict[str, float]]): A dictionary representing the balance of functional zones.
     """
 
@@ -37,7 +40,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
     # request params
     project_id: int = Field(examples=[120], description="The project ID")
     scenario_id: int = Field(examples=[835], description="The scenario ID")
-    elevation_angle: int | None = Field(
+    elevation_angle: Optional[int] = Field(
         ge=0,
         le=90,
         default=None,
@@ -77,7 +80,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
                 ): v
                 for k, v in self.territory_balance.items()
             },
-            name="user-defined func zone",
+            name="Automatically formed zone",
         )
         return self
 
