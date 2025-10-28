@@ -1,7 +1,7 @@
 [tool.poetry]
 package-mode = false
 name = "GenPlanner"
-version = "0.1.0"
+version = "0.2.0"
 license = "BSD-3-Clause"
 description = "kek"
 authors = ["DDonnyy <63115678+DDonnyy@users.noreply.github.com>"]

@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from iduconfig import Config
 from loguru import logger
 
+from app.version import __version__ as version
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
 from app.common.api_handlers.json_api_handler import AsyncJsonApiHandler
@@ -17,6 +18,8 @@ async def init_dependencies(app: FastAPI):
     Args:
         app (FastAPI): FastAPI app instance
     """
+
+    app.state.version = version
 
     # app config initialization
     app.state.config = Config()

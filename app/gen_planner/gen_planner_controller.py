@@ -1,7 +1,6 @@
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sklearn.externals.array_api_extra import apply_where
 
 from app.common.auth.bearer import verify_bearer_token
 from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map

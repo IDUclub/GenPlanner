@@ -8,6 +8,7 @@ from app.common.exceptions.exception_handler import ExceptionHandlerMiddleware
 from app.gen_planner.gen_planner_controller import gen_planner_router
 from app.init_dependencies import init_dependencies
 from app.system.logs_router import logs_router
+from app.version import __version__ as version
 
 
 @asynccontextmanager
@@ -16,7 +17,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(lifespan=lifespan, title="GenPlanner", description="GenPlanner by DDonnyy api service", version="0.1.0")
+app = FastAPI(lifespan=lifespan, title="GenPlanner", description="GenPlanner by DDonnyy api service", version=version)
 
 origins = ["*"]
 
