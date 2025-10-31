@@ -8,25 +8,27 @@ from shapely.geometry import shape
 from app.common.api_handlers.json_api_handler import AsyncJsonApiHandler
 from app.common.exceptions.http_exception import http_exception
 
+from .api_client import ApiClient
 
-class UrbanApiGateway:
+
+class UrbanApiClient(ApiClient):
     """
     Class for retrieving data from urban api for gen planner
     This class provides methods to interact with the Urban API, specifically for retrieving project information.
     Attributes:
-        urban_extractor (AsyncApiHandler): Instance of AsyncApiHandler for making API requests.
+        api_json_handler – An instance of AsyncJsonApiHandler to handle API requests.
+        max_async_extractions – Maximum number of asynchronous extractions allowed. Defaults to 40.
     """
 
-    def __init__(self, urban_api_url: str, max_async_extractions: int = 40):
+    def __init__(self, urban_api_json_handler: AsyncJsonApiHandler, max_async_extractions: int = 40):
         """
-        Function initializes the UrbanApiGateway with an AsyncJsonApiHandler instance.
+        Function initializes the UrbanApiClient with an AsyncJsonApiHandler instance.
         Args:
-            urban_api_url (str): An instance of AsyncJsonApiHandler to handle API requests.
+            urban_api_json_handler (str): An instance of AsyncJsonApiHandler to handle API requests.
             max_async_extractions (int): Maximum number of asynchronous extractions allowed. Defaults to 40.
         """
 
-        self.urban_extractor: AsyncJsonApiHandler = AsyncJsonApiHandler(urban_api_url)
-        self.max_async_extractions: int = max_async_extractions
+        super().__init__(urban_api_json_handler, max_async_extractions)
 
     async def extract_several_requests(self, requests: list[Awaitable], as_gdfs: bool = False) -> list[list | dict]:
         """
@@ -73,7 +75,7 @@ class UrbanApiGateway:
         """
 
         url = f"/api/v1/projects/{project_id}"
-        response = await self.urban_extractor.get(url, headers={"Authorization": f"Bearer {token}"} if token else None)
+        response = await self.api_handler.get(url, headers={"Authorization": f"Bearer {token}"} if token else None)
         return response
 
     async def get_territory_geom_by_project_id(
@@ -91,7 +93,7 @@ class UrbanApiGateway:
         """
 
         url = f"/api/v1/projects/{project_id}/territory"
-        response = await self.urban_extractor.get(
+        response = await self.api_handler.get(
             extra_url=url,
             headers={"Authorization": f"Bearer {token}"} if token else None,
         )
@@ -119,7 +121,7 @@ class UrbanApiGateway:
         """
 
         requests = [
-            self.urban_extractor.get(
+            self.api_handler.get(
                 extra_url=url,
                 params={
                     "physical_object_type_id": object_id,
@@ -150,8 +152,9 @@ class UrbanApiGateway:
             gpd.GeoDataFrame | None: gdf with physical objects with listed objects ids or none if noe objects found
         """
 
-        url = f"/api/v1/scenarios/{scenario_id}/context/geometries_with_all_objects"
-        return await self.get_physical_objects(url, object_ids, token)
+        return await self.get_physical_objects(
+            f"/api/v1/scenarios/{scenario_id}/context/geometries_with_all_objects", object_ids, token
+        )
 
     async def get_physical_objects_for_scenario(
         self,
@@ -171,3 +174,35 @@ class UrbanApiGateway:
 
         url = f"/api/v1/scenarios/{scenario_id}/physical_objects_with_geometry"
         return await self.get_physical_objects(url, object_ids, token)
+
+    async def get_functional_zones(self, token: str | None, scenario_id: int, **kwargs) -> gpd.GeoDataFrame:
+        """
+        Function retrieves functional zones from urban api.
+        Args:
+            token (str, optional): token to authenticate with urban api. Defaults to None.
+            scenario_id (int): id of scenario.
+            **kwargs: keyword arguments to pass to urban api. Currently available are:
+
+                - year (int): function zones source year
+                - source (int): function zones source name (Literal["user", "OSM", "PZZ"])
+                - functional_zone_type_id: function zones source type ID
+        Returns:
+            gpd.GeoDataFrame: GeoDataFrame with functional zones.
+        Raises:
+            Any HTTP from urban api will be raised as http_exception.
+        """
+
+        response = await self.api_handler.get(
+            f"/api/v1/scenarios/{scenario_id}/functional_zones",
+            headers={"Authorization": f"Bearer {token}"} if token else None,
+            params=kwargs,
+        )
+        try:
+            return gpd.GeoDataFrame.from_features(response, crs=4326)
+        except Exception as e:
+            raise http_exception(
+                500,
+                "Error during parsing functional zones to GeoDataFrame",
+                _input={"response": response, "crs": 4326},
+                _detail={"error": repr(e)},
+            ) from e

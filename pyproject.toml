@@ -1,7 +1,7 @@
 [tool.poetry]
 package-mode = false
 name = "GenPlanner"
-version = "0.1.0"
+version = "0.2.0"
 license = "BSD-3-Clause"
 description = "kek"
 authors = ["DDonnyy <63115678+DDonnyy@users.noreply.github.com>"]
@@ -25,7 +25,7 @@ maturin = "^1.7.4"
 aiohttp = "^3.11.10"
 pulp = "^3.1.1"
 seaborn = "^0.13.2"
-idu-config = "==1.0.2"
+idu-config = "==1.0.3"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.2.0"

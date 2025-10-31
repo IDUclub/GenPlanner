@@ -123,8 +123,12 @@ def explode_linestring(geometry: LineString) -> list[LineString]:
 
 
 def territory_splitter(
-    gdf_to_split: gpd.GeoDataFrame, splitters: gpd.GeoDataFrame | list[gpd.GeoDataFrame], return_splitters=False
+    gdf_to_split: gpd.GeoDataFrame,
+    splitters: gpd.GeoDataFrame | list[gpd.GeoDataFrame],
+    return_splitters=False,
+    reproject_attr=False,
 ) -> gpd.GeoDataFrame:
+
     original_crs = gdf_to_split.crs
     local_crs = gdf_to_split.estimate_utm_crs()
     gdf_to_split = gdf_to_split.to_crs(local_crs)
@@ -138,20 +142,32 @@ def territory_splitter(
         .clip(gdf_to_split.to_crs(local_crs), keep_geom_type=True)
         .explode()
     )
+
     polygons_points = polygons.copy()
     polygons_points.geometry = polygons.representative_point()
     joined_ind = polygons_points.sjoin(splitters, how="inner", predicate="within").index.tolist()
     polygons["is_splitter"] = polygons.index.isin(joined_ind)
-    polygons.geometry = polygons.apply(
-        lambda x: Polygon(x.geometry.exterior) if not x["is_splitter"] else x.geometry, axis=1
-    )
-    non_splitters = polygons[~polygons["is_splitter"]]
-    contains = non_splitters.sjoin(non_splitters, predicate="contains")
-    to_kick = contains[~(contains.index == contains["index_right"])]["index_right"].to_list()
-    polygons.drop(index=to_kick, inplace=True)
+
+    # polygons.geometry = polygons.apply(
+    #     lambda x: Polygon(x.geometry.exterior) if not x["is_splitter"] else x.geometry, axis=1
+    # )
+    # non_splitters = polygons[~polygons["is_splitter"]]
+    # contains = non_splitters.sjoin(non_splitters, predicate="contains")
+    # to_kick = contains[~(contains.index == contains["index_right"])]["index_right"].to_list()
+    # polygons.drop(index=to_kick, inplace=True)
+
     polygons = polygons[polygons.area >= 1]
+
+    if reproject_attr:
+        attrs_joined = polygons_points.loc[polygons.index].sjoin(gdf_to_split, how="left", predicate="within")
+        cols_left = set(polygons_points.columns)
+        cols_to_add = [c for c in attrs_joined.columns if c not in cols_left and c != "index_right"]
+        if cols_to_add:
+            polygons = polygons.join(attrs_joined[cols_to_add])
+
     if not return_splitters:
         return polygons[~polygons["is_splitter"]].to_crs(original_crs).drop(columns=["is_splitter"])
+
     return polygons.to_crs(original_crs)
 
 

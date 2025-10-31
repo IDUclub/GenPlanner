@@ -202,7 +202,7 @@ class NamedCRS(BaseModel):
         return self.model_dump()
 
 
-class LinkedCRS(BaseGeomModel):
+class LinkedCRS(BaseModel):
     """
     Linked crs
     """
@@ -210,8 +210,11 @@ class LinkedCRS(BaseGeomModel):
     href: Optional[str] = Field(examples=["http://example.com/crs/42"], description="Href of CRS")
     type: Optional[str] = Field(examples=["proj4"], description="Type of CRS, e.g. proj4, wkt, etc.")
 
+    def as_dict(self) -> dict:
+        return self.model_dump()
 
-class FeatureCollectionCRS(BaseGeomModel):
+
+class FeatureCollectionCRS(BaseModel):
     """
     Properties for CRS
     """
@@ -220,7 +223,7 @@ class FeatureCollectionCRS(BaseGeomModel):
     properties: NamedCRS | LinkedCRS
 
     def as_dict(self):
-        return {"type": self.type, "properties": self.properties}
+        return {"type": self.type, "properties": self.properties.as_dict()}
 
     def as_py_proj_crs(self) -> CRS:
         """
@@ -261,9 +264,9 @@ class FeatureCollection(BaseGeomModel):
             gpd.GeoDataFrame: GeoDataFrame representation of the FeatureCollection.
         """
 
-        if self.crs:
-            return gpd.GeoDataFrame.from_features(self.as_dict())
-        return gpd.GeoDataFrame.from_features(self.as_dict(), crs=crs)
+        if crs:
+            return gpd.GeoDataFrame.from_features(self.as_dict(), crs=crs)
+        return gpd.GeoDataFrame.from_features(self.as_dict())
 
 
 class FixZoneFeatureCollection(FeatureCollection):
