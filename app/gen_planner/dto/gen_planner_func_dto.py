@@ -51,7 +51,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
         default=None, description="Fixed zone geometry with zone attribute"
     )
     min_block_area: Optional[dict[int, float]] = Field(
-        default=None, description="Map for each ter zone min block area."
+        default={}, description="Map for each ter zone min block area."
     )
     functional_zones: Optional[FuncZonesInfoDTO] = Field(default=None, description="The functional zones info")
     territory_balance: dict[int, float] = Field(
