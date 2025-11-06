@@ -50,7 +50,7 @@ class EcodonutApiClient(ApiClient):
             headers={"Authorization": f"Bearer {token}"},
         )
         try:
-            return gpd.GeoDataFrame.from_features(response, crs=4326).query(f"slope_deg <= {angle}")
+            return gpd.GeoDataFrame.from_features(response, crs=4326).query(f"slope_deg >= {angle}")
         except HTTPException:
             raise
         except Exception as e:
