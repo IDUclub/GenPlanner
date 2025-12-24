@@ -66,7 +66,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
                 k,
                 self.min_block_area.get(k) if self.min_block_area.get(k) else scenario_ter_zones_map[k].min_block_area,
             )
-            for k in self.territory_balance.keys()
+            for k in self.territory_balance.keys() if k in scenario_ter_zones_map
         }
         self._custom_func_zone = FuncZone(
             {
@@ -78,7 +78,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
                         else scenario_ter_zones_map[k].min_block_area
                     ),
                 ): v
-                for k, v in self.territory_balance.items()
+                for k, v in self.territory_balance.items() if k in scenario_ter_zones_map
             },
             name="Automatically formed zone",
         )
