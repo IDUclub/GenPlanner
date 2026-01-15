@@ -118,12 +118,15 @@ class GenPlannerService:
         params._territory_gdf = await self.urban_api_client.get_territory_geom_by_project_id(params.project_id, token)
         return params
 
-    async def form_genplanner(self, params: GenPlannerFuncZonesDTO, token: str) -> GenPlanner:
+    async def form_genplanner(
+        self, params: GenPlannerFuncZonesDTO, token: str, only_on_zones: bool = False
+    ) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
         Args:
             params (GenPlannerFuncZonesDTO): Parameters for the generation.
             token (str): User bearer access token.
+            only_on_zones (bool): Weather to generate only using requested zones
         Returns:
             GenPlanner: GenPlanner object with the given parameters.
         """
@@ -146,10 +149,13 @@ class GenPlannerService:
             ]
         else:
             func_zones = None
+        if only_on_zones:
+            params._territory_gdf = params._territory_gdf.overlay(func_zones, how="difference")
+            func_zones = None
         return GenPlanner(params._territory_gdf, **objects, existing_terr_zones=func_zones, simplify_value=10)
 
     @staticmethod
-    async def form_custom_genplanner( params: GenPlannerCustomDTO) -> GenPlanner:
+    async def form_custom_genplanner(params: GenPlannerCustomDTO) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
         Args:
@@ -201,18 +207,21 @@ class GenPlannerService:
                     """
         )
 
-    async def run_func_generation(self, params: GenPlannerFuncZonesDTO, token: str) -> GenPlannerResultSchema:
+    async def run_func_generation(
+        self, params: GenPlannerFuncZonesDTO, token: str, on_zones_only: bool = False
+    ) -> GenPlannerResultSchema:
         """
         Function runs the functional generation with the given parameters.
         Args:
             params (GenPlannerFuncZonesDTO): Parameters for the functional generation.
             token (str): User bearer access token.
+            on_zones_only
         Returns:
             GenPlannerResultSchema: Result of the functional generation.
         """
 
         await self.log_request_params(params, True)
-        genplanner = await self.form_genplanner(params, token)
+        genplanner = await self.form_genplanner(params, token, on_zones_only)
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
             funczone=params._custom_func_zone,

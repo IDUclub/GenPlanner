@@ -36,6 +36,20 @@ async def run_func_territory_zones_generation(
     return await genplanner_service.run_func_generation(params, token)
 
 
+@gen_planner_router.post(
+    "run_func_generation/only_zones",
+    response_model=GenPlannerResultSchema,
+    openapi_extra=gen_planner_func_zone_dto_example,
+)
+async def run_only_zones_generation(
+    params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)],
+    token: str = Depends(verify_bearer_token),
+    gen_planner_service: GenPlannerService = Depends(get_genplanner_service),
+):
+
+    return await gen_planner_service.run_func_generation(params, token, True)
+
+
 @gen_planner_router.post("/custom/run_func_generation", response_model=GenPlannerResultSchema)
 async def run_custom_territory_zones_generation(
     params: Annotated[GenPlannerCustomDTO, Depends(GenPlannerCustomDTO)],
