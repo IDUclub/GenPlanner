@@ -37,7 +37,7 @@ async def run_func_territory_zones_generation(
 
 
 @gen_planner_router.post(
-    "run_func_generation/only_zones",
+    "/run_func_generation/only_zones",
     response_model=GenPlannerResultSchema,
     openapi_extra=gen_planner_func_zone_dto_example,
 )
