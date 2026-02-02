@@ -4,6 +4,7 @@ from typing import Literal
 
 import geopandas as gpd
 import pandas as pd
+from genplanner import GenPlanner
 from loguru import logger
 from shapely import buffer
 
@@ -13,7 +14,6 @@ from app.common.constants.api_constants import scenario_func_zones_map, scenario
 
 from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
-from .python.src.genplanner import GenPlanner
 from .schema.gen_planner_schema import GenPlannerResultSchema
 
 ROADS_OBJECTS_IDS = [50, 51, 52]

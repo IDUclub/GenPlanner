@@ -1,4 +1,6 @@
-from app.gen_planner.python.src.zoning import basic_func_zone, func_zones, terr_zones
+from genplanner import basic_func_zone
+from genplanner import default_func_zones as func_zones
+from genplanner import default_terr_zones as terr_zones
 
 scenario_func_zones_map = {
     8: basic_func_zone,

@@ -4,12 +4,12 @@ from fastapi import FastAPI
 from iduconfig import Config
 from loguru import logger
 
-from app.version import __version__ as version
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
 from app.common.api_handlers.json_api_handler import AsyncJsonApiHandler
 from app.common.logging.init_logger import init_logger
 from app.gen_planner.gen_planner_service import GenPlannerService
+from app.version import __version__ as version
 
 
 async def init_dependencies(app: FastAPI):
