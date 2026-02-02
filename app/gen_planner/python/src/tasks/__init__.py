@@ -1,4 +1,0 @@
-from .base_splitters import gdf_splitter
-from .block_splitters import multi_feature2blocks_initial, polygon2blocks_splitter
-from .terr_zone_splitters import feature2terr_zones_initial, multi_feature2terr_zones_initial
-from .func_zone_splitters import poly2func2terr2block_initial

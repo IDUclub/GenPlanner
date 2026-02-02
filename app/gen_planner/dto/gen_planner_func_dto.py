@@ -1,12 +1,11 @@
 from typing import Literal, Optional, Self
 
 import geopandas as gpd
+from genplanner import FuncZone, TerritoryZone
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.api_constants import scenario_ter_zones_map
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection
-from app.gen_planner.python.src.zoning.func_zones import FuncZone
-from app.gen_planner.python.src.zoning.terr_zones import TerritoryZone
 
 
 class FuncZonesInfoDTO(BaseModel):
@@ -50,9 +49,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
     fix_zones: Optional[FixZoneFeatureCollection] = Field(
         default=None, description="Fixed zone geometry with zone attribute"
     )
-    min_block_area: Optional[dict[int, float]] = Field(
-        default={}, description="Map for each ter zone min block area."
-    )
+    min_block_area: Optional[dict[int, float]] = Field(default={}, description="Map for each ter zone min block area.")
     functional_zones: Optional[FuncZonesInfoDTO] = Field(default=None, description="The functional zones info")
     territory_balance: dict[int, float] = Field(
         description="Balance of functional zones by ID",
@@ -66,7 +63,8 @@ class GenPlannerFuncZonesDTO(BaseModel):
                 k,
                 self.min_block_area.get(k) if self.min_block_area.get(k) else scenario_ter_zones_map[k].min_block_area,
             )
-            for k in self.territory_balance.keys() if k in scenario_ter_zones_map
+            for k in self.territory_balance.keys()
+            if k in scenario_ter_zones_map
         }
         self._custom_func_zone = FuncZone(
             {
@@ -78,7 +76,8 @@ class GenPlannerFuncZonesDTO(BaseModel):
                         else scenario_ter_zones_map[k].min_block_area
                     ),
                 ): v
-                for k, v in self.territory_balance.items() if k in scenario_ter_zones_map
+                for k, v in self.territory_balance.items()
+                if k in scenario_ter_zones_map
             },
             name="Automatically formed zone",
         )

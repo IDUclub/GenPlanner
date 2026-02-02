@@ -1,11 +1,11 @@
 from typing import Self
 
 import geopandas as gpd
+from genplanner import FuncZone
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.api_constants import scenario_func_zones_map
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
-from app.gen_planner.python.src.zoning.func_zones import FuncZone
 
 
 class GenPlannerCustomDTO(BaseModel):

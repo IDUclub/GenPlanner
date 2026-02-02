@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Self
 
 import geopandas as gpd
+from genplanner import FuncZone, TerritoryZone
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pyproj import CRS
 from shapely.geometry import shape
@@ -10,8 +11,6 @@ from shapely.geometry.base import BaseGeometry
 
 from app.common.constants.api_constants import custom_ter_zones_map_by_name, scenario_func_zones_map
 from app.common.exceptions.http_exception import http_exception
-from app.gen_planner.python.src.zoning.func_zones import FuncZone
-from app.gen_planner.python.src.zoning.terr_zones import TerritoryZone
 
 folder_path = Path(__file__).parent.absolute()
 geom_types = ["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"]
