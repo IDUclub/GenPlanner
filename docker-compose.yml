@@ -2,7 +2,7 @@ version: '3.4'
 
 services:
   gen_planner:
-    image: gen_planner:0.3.1s
+    image: gen_planner:0.3.2s
     build:
       context: .
       dockerfile: ./Dockerfile
