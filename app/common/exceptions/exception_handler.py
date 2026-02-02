@@ -31,16 +31,42 @@ class ExceptionHandlerMiddleware(BaseHTTPMiddleware):  # pylint: disable=too-few
             call_next: function to extract.
         """
 
+        request_info = {
+            "method": request.method,
+            "url": str(request.url),
+            "path_params": dict(request.path_params),
+            "query_params": dict(request.query_params),
+            "headers": dict(request.headers),
+        }
         try:
             return await call_next(request)
+        # TODO remove to custom error when added to genplanner lib or add validation to dto
+        except ValueError as e:
+            if (
+                e.args
+                and e.args[0] == "Some points in fixed_zones are located outside the working territory geometries."
+            ):
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "message": repr(e),
+                        "error_type": e.__class__.__name__,
+                        "request": request_info,
+                        "detail": None,
+                    },
+                )
+            else:
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "message": "Internal server error",
+                        "error_type": e.__class__.__name__,
+                        "request": request_info,
+                        "detail": str(e),
+                        "traceback": traceback.format_exc().splitlines(),
+                    },
+                )
         except Exception as e:
-            request_info = {
-                "method": request.method,
-                "url": str(request.url),
-                "path_params": dict(request.path_params),
-                "query_params": dict(request.query_params),
-                "headers": dict(request.headers),
-            }
             try:
                 request_info["body"] = await request.json()
             except:
