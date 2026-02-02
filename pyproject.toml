@@ -1,15 +1,13 @@
 [tool.poetry]
 package-mode = false
-name = "GenPlanner"
-version = "0.3.0"
+name = "GenPlannerAPI"
+version = "0.3.1"
 license = "BSD-3-Clause"
-description = "kek"
-authors = ["DDonnyy <63115678+DDonnyy@users.noreply.github.com>"]
-
-packages = [{ include = "src", from = "gen_planner/python" }]
+description = "REST API APP on FastAPI framework for genplanner lib integration to 'Prostor' platform"
+authors = ["LeonDeTur <100690100+LeonDeTur@users.noreply.github.com>"]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.11,<3.13"
 tqdm = "^4.66.2"
 numpy = "^2.1.3"
 pandas = "^2.2.0"
@@ -25,7 +23,8 @@ maturin = "^1.7.4"
 aiohttp = "^3.11.10"
 pulp = "^3.1.1"
 seaborn = "^0.13.2"
-idu-config = "==1.0.3"
+idu-config = ">=1.0.3,<2.0.0"
+genplanner = ">=0.1.0,<0.2.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.2.0"
