@@ -1,7 +1,7 @@
 [tool.poetry]
 package-mode = false
 name = "GenPlannerAPI"
-version = "0.3.2"
+version = "0.3.3"
 license = "BSD-3-Clause"
 description = "REST API APP on FastAPI framework for genplanner lib integration to 'Prostor' platform"
 authors = ["LeonDeTur <100690100+LeonDeTur@users.noreply.github.com>"]

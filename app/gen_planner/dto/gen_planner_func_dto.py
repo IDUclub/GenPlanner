@@ -35,6 +35,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
     _custom_func_zone = None
     _territory_gdf: gpd.GeoDataFrame | None = None
     _fix_zones_gdf: gpd.GeoDataFrame | None = None
+    _initial_zones_to_add: gpd.GeoDataFrame | None = None
 
     # request params
     project_id: int = Field(examples=[120], description="The project ID")
