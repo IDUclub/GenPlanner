@@ -4,7 +4,8 @@ from typing import Literal
 
 import geopandas as gpd
 import pandas as pd
-from genplanner import GenPlanner
+from genplanner import GenPlanner, TerritoryZone
+from iduconfig import Config
 from loguru import logger
 from shapely import buffer
 
@@ -119,17 +120,31 @@ class GenPlannerService:
         return params
 
     async def form_genplanner(
-        self, params: GenPlannerFuncZonesDTO, token: str, only_on_zones: bool = False
+        self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
     ) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
         Args:
             params (GenPlannerFuncZonesDTO): Parameters for the generation.
             token (str): User bearer access token.
-            only_on_zones (bool): Weather to generate only using requested zones
+            only_on_zones (bool): Weather to generate only using requested zones.
         Returns:
             GenPlanner: GenPlanner object with the given parameters.
         """
+
+        def _change_ter_zone_name(ter_zone: TerritoryZone, rename_map: dict[TerritoryZone, str]) -> TerritoryZone:
+            """
+            Function changes TerritoryZone name with the given map if possible.
+            Args:
+                ter_zone (TerritoryZone): TerritoryZone object from genplanner library.
+                rename_map (dict[TerritoryZone, str]): Map rename name to new name.
+            Returns:
+                TerritoryZone: TerritoryZone object with the given map.
+            """
+
+            if rename_map.get(ter_zone):
+                ter_zone.name = rename_map.get(ter_zone)
+            return ter_zone
 
         params = await self.restore_params(params, token)
         objects = await self.get_all_physical_objects(
@@ -151,8 +166,25 @@ class GenPlannerService:
             func_zones = None
         if only_on_zones:
             params._territory_gdf = params._territory_gdf.overlay(func_zones, how="difference")
+            func_zones = func_zones[["geometry", "territory_zone", "functional_zone_type_id"]]
+            rename_map = (
+                func_zones[["territory_zone", "functional_zone_type_id"]]
+                .dropna()
+                .drop_duplicates()
+                .set_index("territory_zone")["functional_zone_type_id"]
+                .to_dict()
+            )
+            func_zones["territory_zone"].apply(lambda x: _change_ter_zone_name(x, rename_map))
+            func_zones.drop(columns="functional_zone_type_id", inplace=True)
+            params._initial_zones_to_add = func_zones
             func_zones = None
-        return GenPlanner(params._territory_gdf, **objects, existing_terr_zones=func_zones, simplify_value=10)
+        return GenPlanner(
+            params._territory_gdf,
+            **objects,
+            existing_terr_zones=func_zones,
+            simplify_value=10,
+            parallel=False if config.get("APP_ENV") == "development" else True,
+        )
 
     @staticmethod
     async def form_custom_genplanner(params: GenPlannerCustomDTO) -> GenPlanner:
@@ -208,7 +240,11 @@ class GenPlannerService:
         )
 
     async def run_func_generation(
-        self, params: GenPlannerFuncZonesDTO, token: str, on_zones_only: bool = False
+        self,
+        params: GenPlannerFuncZonesDTO,
+        token: str,
+        config: Config,
+        on_zones_only: bool = False,
     ) -> GenPlannerResultSchema:
         """
         Function runs the functional generation with the given parameters.
@@ -221,12 +257,19 @@ class GenPlannerService:
         """
 
         await self.log_request_params(params, True)
-        genplanner = await self.form_genplanner(params, token, on_zones_only)
+        genplanner = await self.form_genplanner(
+            params,
+            token,
+            config,
+            on_zones_only,
+        )
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
             funczone=params._custom_func_zone,
             fixed_terr_zones=params._fix_zones_gdf,
         )
+        if on_zones_only:
+            zones = pd.concat([zones, params._initial_zones_to_add])
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
         return GenPlannerResultSchema(**res)

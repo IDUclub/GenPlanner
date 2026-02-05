@@ -1,10 +1,11 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from iduconfig import Config
 
 from app.common.auth.bearer import verify_bearer_token
 from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
-from app.dependencies import get_genplanner_service
+from app.dependencies import get_config, get_genplanner_service
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from app.gen_planner.schema.gen_planner_schema import GenPlannerResultSchema
@@ -31,9 +32,10 @@ async def run_func_territory_zones_generation(
     params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)],
     token: str = Depends(verify_bearer_token),
     genplanner_service: GenPlannerService = Depends(get_genplanner_service),
+    config: Config = Depends(get_config),
 ) -> GenPlannerResultSchema:
 
-    return await genplanner_service.run_func_generation(params, token)
+    return await genplanner_service.run_func_generation(params, token, config)
 
 
 @gen_planner_router.post(
@@ -45,9 +47,10 @@ async def run_only_zones_generation(
     params: Annotated[GenPlannerFuncZonesDTO, Depends(GenPlannerFuncZonesDTO)],
     token: str = Depends(verify_bearer_token),
     gen_planner_service: GenPlannerService = Depends(get_genplanner_service),
+    config: Config = Depends(get_config),
 ):
 
-    return await gen_planner_service.run_func_generation(params, token, True)
+    return await gen_planner_service.run_func_generation(params, token, config, True)
 
 
 @gen_planner_router.post("/custom/run_func_generation", response_model=GenPlannerResultSchema)
