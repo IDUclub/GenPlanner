@@ -4,7 +4,7 @@ from typing import Literal
 
 import geopandas as gpd
 import pandas as pd
-from genplanner import GenPlanner, TerritoryZone
+from genplanner import GenPlanner
 from iduconfig import Config
 from loguru import logger
 from shapely import buffer
@@ -132,24 +132,11 @@ class GenPlannerService:
             GenPlanner: GenPlanner object with the given parameters.
         """
 
-        def _change_ter_zone_name(ter_zone: TerritoryZone, rename_map: dict[TerritoryZone, str]) -> TerritoryZone:
-            """
-            Function changes TerritoryZone name with the given map if possible.
-            Args:
-                ter_zone (TerritoryZone): TerritoryZone object from genplanner library.
-                rename_map (dict[TerritoryZone, str]): Map rename name to new name.
-            Returns:
-                TerritoryZone: TerritoryZone object with the given map.
-            """
-
-            if rename_map.get(ter_zone):
-                ter_zone.name = rename_map.get(ter_zone)
-            return ter_zone
-
         params = await self.restore_params(params, token)
         objects = await self.get_all_physical_objects(
             params.project_id, params.scenario_id, params.elevation_angle, token
         )
+        # TODO revise if-else logic
         if params.functional_zones:
             func_zones = await self.urban_api_client.get_functional_zones(
                 token,
@@ -159,29 +146,20 @@ class GenPlannerService:
             )
             func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
             func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
+            if only_on_zones:
+                params._initial_zones_to_add = func_zones[
+                    ~func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
+                ]
+                params._territory_gdf = func_zones.copy()
             func_zones = func_zones[
                 func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
             ]
         else:
             func_zones = None
-        if only_on_zones:
-            params._territory_gdf = params._territory_gdf.overlay(func_zones, how="difference")
-            func_zones = func_zones[["geometry", "territory_zone", "functional_zone_type_id"]]
-            rename_map = (
-                func_zones[["territory_zone", "functional_zone_type_id"]]
-                .dropna()
-                .drop_duplicates()
-                .set_index("territory_zone")["functional_zone_type_id"]
-                .to_dict()
-            )
-            func_zones["territory_zone"].apply(lambda x: _change_ter_zone_name(x, rename_map))
-            func_zones.drop(columns="functional_zone_type_id", inplace=True)
-            params._initial_zones_to_add = func_zones
-            func_zones = None
         return GenPlanner(
             params._territory_gdf,
             **objects,
-            existing_terr_zones=func_zones,
+            existing_terr_zones=None if only_on_zones else func_zones,
             simplify_value=10,
             parallel=False if config.get("APP_ENV") == "development" else True,
         )
@@ -214,7 +192,7 @@ class GenPlannerService:
         """
 
         if "territory_zone" in zones.columns:
-            zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x else None)
+            zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x and not pd.isna(x) else None)
         zones.drop(columns="func_zone", inplace=True)
         return {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
 
