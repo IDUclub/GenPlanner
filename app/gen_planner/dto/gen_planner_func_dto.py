@@ -54,6 +54,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
     functional_zones: Optional[FuncZonesInfoDTO] = Field(default=None, description="The functional zones info")
     territory_balance: dict[int, float] = Field(
         description="Balance of functional zones by ID",
+        min_length=1,
     )
 
     @model_validator(mode="after")
