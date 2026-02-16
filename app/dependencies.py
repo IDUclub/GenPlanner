@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi import Request
 from iduconfig import Config
 
@@ -14,5 +16,5 @@ def get_genplanner_service(request: Request) -> GenPlannerService:
     return request.app.state.genplanner_service
 
 
-def get_log_path(request: Request):
+def get_log_path(request: Request) -> Path:
     return request.app.state.log_path
