@@ -156,6 +156,10 @@ class GenPlannerService:
             ]
         else:
             func_zones = None
+        logger.info(f"func_zones: {type(func_zones)}")
+        if isinstance(func_zones, gpd.GeoDataFrame):
+            logger.info(f"func_zones ids: {func_zones['functional_zone_id']}")
+            logger.info(f"Only on zones: {only_on_zones}")
         return GenPlanner(
             params._territory_gdf,
             **objects,
