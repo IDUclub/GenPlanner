@@ -1,7 +1,7 @@
 from typing import Literal, Optional, Self
 
 import geopandas as gpd
-from genplanner import FuncZone, TerritoryZone
+from genplanner import FunctionalZone, TerritoryZone
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.api_constants import scenario_ter_zones_map
@@ -68,7 +68,7 @@ class GenPlannerFuncZonesDTO(BaseModel):
             for k in self.territory_balance.keys()
             if k in scenario_ter_zones_map
         }
-        self._custom_func_zone = FuncZone(
+        self._custom_func_zone = FunctionalZone(
             {
                 TerritoryZone(
                     k,

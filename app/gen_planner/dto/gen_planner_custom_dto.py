@@ -1,7 +1,7 @@
 from typing import Self
 
 import geopandas as gpd
-from genplanner import FuncZone
+from genplanner import FunctionalZone
 from pydantic import BaseModel, Field, model_validator
 
 from app.common.constants.api_constants import scenario_func_zones_map
@@ -16,12 +16,12 @@ class GenPlannerCustomDTO(BaseModel):
         territory (PolygonalFeatureCollection | None): territory to generate functional zones on
 
         _territory_gdf (gpd.GeoDataFrame | None): gpd.GeoDataFrame representation ot requested territory
-        _func_zone (FuncZone | None): custom functional zones representation to generate functional zones on
+        _func_zone (FunctionalZone | None): custom functional zones representation to generate functional zones on
     """
 
     # service fields
     _territory_gdf: gpd.GeoDataFrame | None = None
-    _func_zone: FuncZone | None = None
+    _func_zone: FunctionalZone | None = None
 
     # request params
     profile_id: int = Field(ge=1, le=13, examples=[1], description="Profile ID to generate functional zones")

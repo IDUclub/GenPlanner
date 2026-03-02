@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Self
 
 import geopandas as gpd
-from genplanner import FuncZone, TerritoryZone
+from genplanner import FunctionalZone, TerritoryZone
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pyproj import CRS
 from shapely.geometry import shape
@@ -164,7 +164,7 @@ class FixZonePointFeature(Feature):
                 _detail={},
                 _input=value,
             )
-        if not isinstance(value["fixed_zone"], TerritoryZone) and not isinstance(value["fixed_zone"], FuncZone):
+        if not isinstance(value["fixed_zone"], TerritoryZone) and not isinstance(value["fixed_zone"], FunctionalZone):
             if value["fixed_zone"] not in (
                 list(custom_ter_zones_map_by_name.keys()) + list(scenario_func_zones_map.keys())
             ):
