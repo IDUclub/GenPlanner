@@ -24,7 +24,7 @@ aiohttp = "^3.11.10"
 pulp = "^3.1.1"
 seaborn = "^0.13.2"
 idu-config = ">=1.0.3,<2.0.0"
-genplanner = ">=0.1.0,<0.2.0"
+genplanner = "^1.0.0"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.2.0"
