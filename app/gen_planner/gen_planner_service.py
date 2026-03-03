@@ -163,12 +163,13 @@ class GenPlannerService:
 
         #TODO fix
         # shapely.errors.GEOSException: TopologyException: side location conflict at 389422.28961780888 6643244.4901334196
-        # for scenario 109 2024 OSM in utm_crs
+        # for scenario 109 2024 OSM in utm_crs in existing_terr_zones
         return GenPlanner(
             features_gdf=params._territory_gdf,
             roads_gdf=roads_gdf,
             exclude_gdf=exclude_gdf,
-            existing_terr_zones=None if only_on_zones else func_zones,
+            # existing_terr_zones=None if only_on_zones else func_zones,
+            # simplify_geometry_value = 100,
             # parallel=False if config.get("APP_ENV") == "development" else True,
             parallel=True
         )
