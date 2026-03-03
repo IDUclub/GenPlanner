@@ -12,8 +12,10 @@ class FuncZonesInfoDTO(BaseModel):
 
     year: int = Field(examples=[2025], description="Year of functional zones")
     source: Literal["PZZ", "OSM", "User"] = Field(examples=["User"], description="Source of functional zones")
-    fixed_functional_zones_ids: list[int] = Field(
-        examples=[1619712], description="IDs of functional zones to take into account"
+    fixed_functional_zones_ids: list[int] | None = Field(
+        default=None,
+        examples=[[1619712], None],
+        description="IDs of functional zones to take into account",
     )
 
 
@@ -57,30 +59,56 @@ class GenPlannerFuncZonesDTO(BaseModel):
         min_length=1,
     )
 
+    neighbour_pairs: list[tuple[int, int]] | None = Field(
+        default=None,
+        description=(
+            "List of zone ID pairs that must/can be neighbours. "
+            "Each pair should contain two territorial zone identifiers."
+        ),
+        examples=[[(6, 2), (3, 7)]],
+    )
+
+    forbidden_pairs: list[tuple[int, int]] | None = Field(
+        default=None,
+        description=(
+            "List of zone ID pairs that are forbidden to be neighbours. "
+            "Each pair should contain two territorial zone identifiers."
+        ),
+        examples=[[2, 7]],
+    )
+
+    ignore_default_relations: bool = Field(
+        default=False,
+        description=(
+            "If set to True, ignore the library's default forbidden neighbourhood "
+            "rules when building the relation matrix.  When False (default) the "
+            "default forbidden neighbourhood for zone kinds is applied first and "
+            "then the provided neighbour_pairs and forbidden_pairs are used to "
+            "override specific relationships."
+        ),
+    )
+
+    # app/gen_planner/dto/gen_planner_func_dto.py
+
     @model_validator(mode="after")
     def assign_custom_ter_zone_name(self) -> Self:
+        self._custom_id_ter_zone_map = {}
+        for k in self.territory_balance.keys():
+            if k not in scenario_ter_zones_map:
+                continue
 
-        self._custom_id_ter_zone_map = {
-            k: TerritoryZone(
-                k,
-                self.min_block_area.get(k) if self.min_block_area.get(k) else scenario_ter_zones_map[k].min_block_area,
+            base = scenario_ter_zones_map[k]
+            mba = self.min_block_area.get(k) or base.min_block_area
+
+            self._custom_id_ter_zone_map[k] = TerritoryZone(
+                kind=base.kind,
+                name=base.name,
+                min_block_area=mba,
             )
-            for k in self.territory_balance.keys()
-            if k in scenario_ter_zones_map
-        }
+
         self._custom_func_zone = FunctionalZone(
-            {
-                TerritoryZone(
-                    k,
-                    (
-                        self.min_block_area.get(k)
-                        if self.min_block_area.get(k)
-                        else scenario_ter_zones_map[k].min_block_area
-                    ),
-                ): v
-                for k, v in self.territory_balance.items()
-                if k in scenario_ter_zones_map
-            },
+            {self._custom_id_ter_zone_map[k]: v for k, v in self.territory_balance.items() if
+             k in self._custom_id_ter_zone_map},
             name="Automatically formed zone",
         )
         return self

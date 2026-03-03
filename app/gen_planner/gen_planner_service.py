@@ -4,7 +4,9 @@ from typing import Literal
 
 import geopandas as gpd
 import pandas as pd
-from genplanner import GenPlanner
+from genplanner import GenPlanner, TerritoryZone
+from genplanner.zone_relations.relation_matrix import ZoneRelationMatrix, Relation
+from genplanner.zone_relations.forbidden_terr_kind import FORBIDDEN_NEIGHBORHOOD
 from iduconfig import Config
 from loguru import logger
 from shapely import buffer
@@ -45,7 +47,7 @@ class GenPlannerService:
 
     async def form_exclude_to_cut(
         self, scenario_id: int, project_id: int, angle: int | None, token: str
-    ) -> dict[Literal["exclude_features"], gpd.GeoDataFrame]:
+    ) -> dict[Literal["exclude_gdf"], gpd.GeoDataFrame]:
         """
         Function retrieves water objects to cut from scenario and context.
         Args:
@@ -72,9 +74,9 @@ class GenPlannerService:
             )
             context_water.to_crs(4326, inplace=True)
             water = pd.concat([water, context_water])
-        return {"exclude_features": pd.concat([water, slope_polygons])}
+        return {"exclude_gdf": pd.concat([water, slope_polygons])}
 
-    async def form_roads(self, scenario_id: int, token: str) -> dict[Literal["roads"], gpd.GeoDataFrame]:
+    async def form_roads(self, scenario_id: int, token: str) -> dict[Literal["roads_gdf"], gpd.GeoDataFrame]:
         """
         Function retrieves roads objects from scenario.
         Args:
@@ -85,11 +87,11 @@ class GenPlannerService:
         """
 
         roads = await self.urban_api_client.get_physical_objects_for_scenario(scenario_id, ROADS_OBJECTS_IDS, token)
-        return {"roads": roads}
+        return {"roads_gdf": roads}
 
     async def get_all_physical_objects(
         self, project_id: int, scenario_id: int, angle: int | None, token: str
-    ) -> dict[Literal["exclude_features", "roads"], gpd.GeoDataFrame]:
+    ) -> dict[Literal["exclude_gdf", "roads_gdf"], gpd.GeoDataFrame]:
         """
         Function retrieves all physical objects for the given project and scenario.
         Args:
@@ -120,18 +122,8 @@ class GenPlannerService:
         return params
 
     async def form_genplanner(
-        self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
+            self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
     ) -> GenPlanner:
-        """
-        Function forms GenPlanner object with the given parameters.
-        Args:
-            params (GenPlannerFuncZonesDTO): Parameters for the generation.
-            token (str): User bearer access token.
-            only_on_zones (bool): Weather to generate only using requested zones.
-        Returns:
-            GenPlanner: GenPlanner object with the given parameters.
-        """
-
         params = await self.restore_params(params, token)
         objects = await self.get_all_physical_objects(
             params.project_id, params.scenario_id, params.elevation_angle, token
@@ -146,27 +138,48 @@ class GenPlannerService:
             )
             func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
             func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
+            fixed_ids = params.functional_zones.fixed_functional_zones_ids or []
             if only_on_zones:
-                params._initial_zones_to_add = func_zones[
-                    ~func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
-                ]
+                if fixed_ids:
+                    params._initial_zones_to_add = func_zones[~func_zones["functional_zone_id"].isin(fixed_ids)]
+                else:
+                    params._initial_zones_to_add = func_zones
                 params._territory_gdf = func_zones.copy()
-            func_zones = func_zones[
-                func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
-            ]
+
+            if fixed_ids:
+                func_zones = func_zones[func_zones["functional_zone_id"].isin(fixed_ids)]
+                if func_zones.empty:
+                    func_zones = None
         else:
             func_zones = None
         logger.info(f"func_zones: {type(func_zones)}")
         if isinstance(func_zones, gpd.GeoDataFrame):
             logger.info(f"func_zones ids: {func_zones['functional_zone_id']}")
             logger.info(f"Only on zones: {only_on_zones}")
+
+        exclude_gdf = objects.get("exclude_gdf")
+        roads_gdf = objects.get("roads_gdf")
+
+
+        #TODO fix
+        # shapely.errors.GEOSException: TopologyException: side location conflict at 389422.28961780888 6643244.4901334196
+        # for scenario 109 2024 OSM in utm_crs
         return GenPlanner(
-            params._territory_gdf,
-            **objects,
+            features_gdf=params._territory_gdf,
+            roads_gdf=roads_gdf,
+            exclude_gdf=exclude_gdf,
             existing_terr_zones=None if only_on_zones else func_zones,
-            simplify_value=10,
-            parallel=False if config.get("APP_ENV") == "development" else True,
+            # parallel=False if config.get("APP_ENV") == "development" else True,
+            parallel=True
         )
+
+        # return GenPlanner(
+        #     params._territory_gdf,
+        #     **objects,
+        #     existing_terr_zones=None if only_on_zones else func_zones,
+        #     simplify_geometry_value=10,
+        #     parallel=False if config.get("APP_ENV") == "development" else True,
+        # )
 
     @staticmethod
     async def form_custom_genplanner(params: GenPlannerCustomDTO) -> GenPlanner:
@@ -184,20 +197,35 @@ class GenPlannerService:
 
     @staticmethod
     async def form_genplanner_response(
-        zones: gpd.GeoDataFrame, roads: gpd.GeoDataFrame
+            zones: gpd.GeoDataFrame, roads: gpd.GeoDataFrame
     ) -> dict[Literal["zones", "roads"], dict]:
-        """
-        Function forms GenPlannerResultSchema from the given roads and zones GeoDataFrames.
-        Args:
-            roads (gpd.GeoDataFrame): Roads GeoDataFrame.
-            zones (gpd.GeoDataFrame): Zones GeoDataFrame.
-        Returns:
-            GenPlannerResultSchema: GenPlanner result schema with the given roads and zones.
-        """
+
+        zones = zones.copy()
+        roads = roads.copy()
 
         if "territory_zone" in zones.columns:
-            zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x and not pd.isna(x) else None)
-        zones.drop(columns="func_zone", inplace=True)
+            zones["territory_zone"] = zones["territory_zone"].apply(
+                lambda x: getattr(x, "name", x) if x is not None and not pd.isna(x) else None
+            )
+
+        for col in ("func_zone", "funczone", "functional_zone", "zones_ratio", "__func_zone__"):
+            if col in zones.columns:
+                zones.drop(columns=[col], inplace=True)
+
+        def _is_json_safe_value(v) -> bool:
+            return v is None or isinstance(v, (str, int, float, bool))
+
+        bad_cols = []
+        for col in zones.columns:
+            if col == "geometry":
+                continue
+            s = zones[col].dropna()
+            if not s.empty and not s.map(_is_json_safe_value).all():
+                bad_cols.append(col)
+
+        if bad_cols:
+            zones.drop(columns=bad_cols, inplace=True)
+
         return {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
 
     @staticmethod
@@ -221,37 +249,79 @@ class GenPlannerService:
                     """
         )
 
-    async def run_func_generation(
-        self,
-        params: GenPlannerFuncZonesDTO,
-        token: str,
-        config: Config,
-        on_zones_only: bool = False,
-    ) -> GenPlannerResultSchema:
+    def _build_relation_matrix_arg(self, params: GenPlannerFuncZonesDTO) -> str | ZoneRelationMatrix:
         """
-        Function runs the functional generation with the given parameters.
-        Args:
-            params (GenPlannerFuncZonesDTO): Parameters for the functional generation.
-            token (str): User bearer access token.
-            on_zones_only
-        Returns:
-            GenPlannerResultSchema: Result of the functional generation.
-        """
+        Build relation_matrix arg for GenPlanner based on request params.
 
+        Returns:
+            - "default" if no custom relations requested
+            - ZoneRelationMatrix instance otherwise
+        """
+        has_custom = bool(params.neighbour_pairs or params.forbidden_pairs or params.ignore_default_relations)
+        if not has_custom:
+            return "default"
+
+        zone_map: dict[int, TerritoryZone] = params._custom_id_ter_zone_map or {}
+        zones_for_matrix = list(zone_map.values())
+
+        if not zones_for_matrix:
+            return "empty" if params.ignore_default_relations else "default"
+
+        if params.ignore_default_relations:
+            matrix = ZoneRelationMatrix.empty(zones_for_matrix)
+        else:
+            matrix = ZoneRelationMatrix.from_kind_forbidden(
+                zones=zones_for_matrix,
+                kind_forbidden=FORBIDDEN_NEIGHBORHOOD,
+            )
+
+        def _pairs_to_zones(pairs: list[tuple[int, int]] | None, rel_name: str) -> list[
+            tuple[TerritoryZone, TerritoryZone]]:
+            out: list[tuple[TerritoryZone, TerritoryZone]] = []
+            if not pairs:
+                return out
+            for a_id, b_id in pairs:
+                a = zone_map.get(a_id)
+                b = zone_map.get(b_id)
+                if not a or not b:
+                    logger.warning(f"Skipping {rel_name} pair ({a_id}, {b_id}) because zone id is unknown.")
+                    continue
+                out.append((a, b))
+            return out
+
+        neigh_pairs = _pairs_to_zones(params.neighbour_pairs, "neighbor")
+        if neigh_pairs:
+            matrix = matrix.with_pairs(neigh_pairs, Relation.NEIGHBOR)
+
+        forb_pairs = _pairs_to_zones(params.forbidden_pairs, "forbidden")
+        if forb_pairs:
+            matrix = matrix.with_pairs(forb_pairs, Relation.FORBIDDEN)
+
+        return matrix
+
+    async def run_func_generation(
+            self,
+            params: GenPlannerFuncZonesDTO,
+            token: str,
+            config: Config,
+            on_zones_only: bool = False,
+    ) -> GenPlannerResultSchema:
         await self.log_request_params(params, True)
-        genplanner = await self.form_genplanner(
-            params,
-            token,
-            config,
-            on_zones_only,
-        )
+
+        genplanner = await self.form_genplanner(params, token, config, on_zones_only)
+
+        relation_matrix_arg = self._build_relation_matrix_arg(params)
+
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
             funczone=params._custom_func_zone,
-            fixed_terr_zones=params._fix_zones_gdf,
+            relation_matrix=relation_matrix_arg,
+            terr_zones_fix_points=params.fix_zones,
         )
-        if on_zones_only:
-            zones = pd.concat([zones, params._initial_zones_to_add])
+
+        if on_zones_only and params._initial_zones_to_add is not None:
+            zones = pd.concat([zones, params._initial_zones_to_add], ignore_index=True)
+
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
         return GenPlannerResultSchema(**res)
