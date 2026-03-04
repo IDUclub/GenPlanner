@@ -4,7 +4,7 @@ import geopandas as gpd
 from genplanner import FunctionalZone, TerritoryZone
 from pydantic import BaseModel, Field, model_validator
 
-from app.common.constants.api_constants import scenario_ter_zones_map
+from app.common.constants.api_constants import scenario_ter_zones_map, name_id_map
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection
 
 
@@ -12,10 +12,8 @@ class FuncZonesInfoDTO(BaseModel):
 
     year: int = Field(examples=[2025], description="Year of functional zones")
     source: Literal["PZZ", "OSM", "User"] = Field(examples=["User"], description="Source of functional zones")
-    fixed_functional_zones_ids: list[int] | None = Field(
-        default=None,
-        examples=[[1619712], None],
-        description="IDs of functional zones to take into account",
+    fixed_functional_zones_ids: list[int] = Field(
+        examples=[1619712], description="IDs of functional zones to take into account"
     )
 
 
@@ -59,58 +57,47 @@ class GenPlannerFuncZonesDTO(BaseModel):
         min_length=1,
     )
 
-    neighbour_pairs: list[tuple[int, int]] | None = Field(
-        default=None,
-        description=(
-            "List of zone ID pairs that must/can be neighbours. "
-            "Each pair should contain two territorial zone identifiers."
-        ),
-        examples=[[(6, 2), (3, 7)]],
-    )
-
-    forbidden_pairs: list[tuple[int, int]] | None = Field(
-        default=None,
-        description=(
-            "List of zone ID pairs that are forbidden to be neighbours. "
-            "Each pair should contain two territorial zone identifiers."
-        ),
-        examples=[[2, 7]],
-    )
-
-    ignore_default_relations: bool = Field(
-        default=False,
-        description=(
-            "If set to True, ignore the library's default forbidden neighbourhood "
-            "rules when building the relation matrix.  When False (default) the "
-            "default forbidden neighbourhood for zone kinds is applied first and "
-            "then the provided neighbour_pairs and forbidden_pairs are used to "
-            "override specific relationships."
-        ),
-    )
-
-    # app/gen_planner/dto/gen_planner_func_dto.py
-
     @model_validator(mode="after")
     def assign_custom_ter_zone_name(self) -> Self:
-        self._custom_id_ter_zone_map = {}
+        """
+        Build custom territorial and functional zone representations from the provided territory
+        balance.  In GenPlanner 1.0.0 the `TerritoryZone` constructor expects a zone kind
+        (string or `TerritoryZoneKind`) rather than the numeric ID used previously.  We use
+        the kind from the default territory zones (`scenario_ter_zones_map`) and apply any
+        custom minimum block area if provided.  A `FunctionalZone` is then created from
+        these territory zones and the requested ratios.
+        """
+        id_to_zone: dict[int, TerritoryZone] = {}
+        id_to_name: dict[int, str] = {v: k for k, v in name_id_map.items()}
+
         for k in self.territory_balance.keys():
-            if k not in scenario_ter_zones_map:
+            key_int = int(k)
+
+            if key_int not in scenario_ter_zones_map:
                 continue
 
-            base = scenario_ter_zones_map[k]
-            mba = self.min_block_area.get(k) or base.min_block_area
-
-            self._custom_id_ter_zone_map[k] = TerritoryZone(
-                kind=base.kind,
-                name=base.name,
-                min_block_area=mba,
+            base_zone = scenario_ter_zones_map[key_int]
+            min_area = (
+                (self.min_block_area or {}).get(key_int)
+                if (self.min_block_area or {}).get(key_int) is not None
+                else base_zone.min_block_area
             )
 
-        self._custom_func_zone = FunctionalZone(
-            {self._custom_id_ter_zone_map[k]: v for k, v in self.territory_balance.items() if
-             k in self._custom_id_ter_zone_map},
-            name="Automatically formed zone",
-        )
+            id_to_zone[key_int] = TerritoryZone(
+                kind=base_zone.kind,
+                name=base_zone.name,
+                min_block_area=min_area,
+            )
+
+        self._custom_id_ter_zone_map = id_to_zone
+
+        zone_ratio_mapping: dict[TerritoryZone, float] = {}
+        for k, ratio in self.territory_balance.items():
+            key_int = int(k)
+            if key_int in id_to_zone:
+                zone_ratio_mapping[id_to_zone[key_int]] = ratio
+
+        self._custom_func_zone = FunctionalZone(zone_ratio_mapping, name="Automatically formed zone")
         return self
 
     @model_validator(mode="after")

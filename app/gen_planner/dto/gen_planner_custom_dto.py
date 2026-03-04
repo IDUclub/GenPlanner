@@ -15,7 +15,7 @@ class GenPlannerCustomDTO(BaseModel):
         profile_id (int): Profile ID to generate functional zones on
         territory (PolygonalFeatureCollection | None): territory to generate functional zones on
 
-        _territory_gdf (gpd.GeoDataFrame | None): gpd.GeoDataFrame representation ot requested territory
+        _territory_gdf (gpd.GeoDataFrame | None): gpd.GeoDataFrame representation of the requested territory
         _func_zone (FunctionalZone | None): custom functional zones representation to generate functional zones on
     """
 
