@@ -206,3 +206,28 @@ class UrbanApiClient(ApiClient):
                 _input={"response": response, "crs": 4326},
                 _detail={"error": repr(e)},
             ) from e
+
+    async def get_scenario_info(self, scenario_id: int, token: str | None = None) -> dict:
+        """
+        Function returns scenario info from urban api.
+        Args:
+            scenario_id (int): Scenario id.
+            token (str, optional): Token to authenticate with urban api. Defaults to None.
+        Returns:
+            dict: Scenario info.
+        """
+
+        url = f"/api/v1/scenarios/{scenario_id}"
+        try:
+            response = await self.api_handler.get(
+                extra_url=url,
+                headers={"Authorization": f"Bearer {token}"} if token else None,
+            )
+            return response
+        except Exception as e:
+            raise http_exception(
+                404,
+                f"Scenario info for ID {scenario_id} is missing",
+                _input={"scenario_id": scenario_id},
+                _detail={"error": repr(e)},
+            ) from e

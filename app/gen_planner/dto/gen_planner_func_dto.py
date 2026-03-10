@@ -40,6 +40,11 @@ class GenPlannerFuncZonesDTO(BaseModel):
     # request params
     project_id: int = Field(examples=[120], description="The project ID")
     scenario_id: int = Field(examples=[835], description="The scenario ID")
+    roads_extend_distance: float | None = Field(
+        default=None,
+        description="Optional roads extend distance for GenPlanner initialization",
+        examples=[5.0],
+    )
     elevation_angle: Optional[int] = Field(
         ge=0,
         le=90,

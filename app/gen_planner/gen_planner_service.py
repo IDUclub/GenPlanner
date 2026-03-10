@@ -16,6 +16,7 @@ from app.common.constants.api_constants import scenario_func_zones_map, scenario
 from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from .schema.gen_planner_schema import GenPlannerResultSchema
+from ..common.exceptions.http_exception import http_exception
 
 ROADS_OBJECTS_IDS = [50, 51, 52]
 WATER_OBJECTS_IDS = [2, 44, 45, 54, 55]
@@ -109,21 +110,37 @@ class GenPlannerService:
         )
         return {k: v for d in objects for k, v in d.items()}
 
-    async def restore_params(self, params: GenPlannerFuncZonesDTO, token: str) -> GenPlannerFuncZonesDTO:
+    async def restore_params(self, params, token: str):
         """
         Function restores parameters for the generation.
         Args:
-            params (GenPlannerFuncZonesDTO): Parameters for the generation.
+            params: Parameters for the generation.
             token (str): User bearer access token.
         Returns:
-            GenPlannerFuncZonesDTO: Restored parameters for the generation.
+            Restored parameters for the generation.
         """
 
-        params._territory_gdf = await self.urban_api_client.get_territory_geom_by_project_id(params.project_id, token)
+        project_id = getattr(params, "project_id", None)
+
+        if project_id is None:
+            scenario_info = await self.urban_api_client.get_scenario_info(params.scenario_id, token)
+            project_id = (scenario_info.get("project") or {}).get("project_id")
+
+            if project_id is None:
+                raise http_exception(
+                    404,
+                    "Project ID cannot be resolved from scenario info",
+                    _input={"scenario_id": params.scenario_id},
+                    _detail={"scenario_info": scenario_info},
+                )
+
+            setattr(params, "project_id", project_id)
+
+        params._territory_gdf = await self.urban_api_client.get_territory_geom_by_project_id(project_id, token)
         return params
 
     async def form_genplanner(
-        self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
+            self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
     ) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
@@ -136,37 +153,51 @@ class GenPlannerService:
         """
 
         params = await self.restore_params(params, token)
+
+        elevation_angle = getattr(params, "elevation_angle", None)
+        functional_zones = getattr(params, "functional_zones", None)
+
         objects = await self.get_all_physical_objects(
-            params.project_id, params.scenario_id, params.elevation_angle, token
+            params.project_id,
+            params.scenario_id,
+            elevation_angle,
+            token,
         )
-        # TODO revise if-else logic
-        if params.functional_zones:
+
+        if functional_zones is not None:
             func_zones = await self.urban_api_client.get_functional_zones(
                 token,
                 params.scenario_id,
-                year=params.functional_zones.year,
-                source=params.functional_zones.source,
+                year=functional_zones.year,
+                source=functional_zones.source,
             )
             func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
             func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
+
             if only_on_zones:
                 params._initial_zones_to_add = func_zones[
-                    ~func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
+                    ~func_zones["functional_zone_id"].isin(functional_zones.fixed_functional_zones_ids)
                 ]
                 params._territory_gdf = func_zones.copy()
+
             func_zones = func_zones[
-                func_zones["functional_zone_id"].isin(params.functional_zones.fixed_functional_zones_ids)
+                func_zones["functional_zone_id"].isin(functional_zones.fixed_functional_zones_ids)
             ]
         else:
             func_zones = None
+
         logger.info(f"func_zones: {type(func_zones)}")
         if isinstance(func_zones, gpd.GeoDataFrame):
             logger.info(f"func_zones ids: {func_zones['functional_zone_id']}")
             logger.info(f"Only on zones: {only_on_zones}")
+
+        roads_extend_distance = getattr(params, "roads_extend_distance", None)
+
         return GenPlanner(
             params._territory_gdf,
             **objects,
             existing_terr_zones=None if only_on_zones else func_zones,
+            roads_extend_distance=roads_extend_distance,
             simplify_geometry_value=0.01,
             parallel=False if config.get("APP_ENV") == "development" else True,
         )
@@ -288,3 +319,18 @@ class GenPlannerService:
             if v not in reverse_ter:
                 reverse_ter[v] = k
         return {reverse_ter[k]: round(func_zone.zones_ratio[k], 2) for k in func_zone.zones_ratio.keys()}
+
+    async def cut_scenario_territory(self, params, config: Config, token: str):
+        await self.log_request_params(params, True)
+        genplanner = await self.form_genplanner(
+            params,
+            token,
+            config,
+            False,
+        )
+        cut_gdf = genplanner.territory_to_work_with.to_crs(4326).copy()
+        cut_gdf.geometry = cut_gdf.geometry.set_precision(1e-6)
+
+        return cut_gdf.to_geo_dict()
+
+

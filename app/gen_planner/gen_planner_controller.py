@@ -11,6 +11,7 @@ from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from app.gen_planner.schema.gen_planner_schema import GenPlannerResultSchema
 
 from .dto.examples import gen_planner_func_zone_dto_example
+from .dto.gen_planner_cutter_dto import PolygonCutterDTO
 from .gen_planner_service import GenPlannerService
 
 gen_planner_router = APIRouter(tags=["gen_planner"])
@@ -69,3 +70,11 @@ async def get_func_zone_ratio(
 ) -> dict[int, float]:
 
     return await genplanner_service.get_func_zone_ratio(zone)
+
+@gen_planner_router.get("/cut_polygons")
+async def get_cut_polygons(
+        params: Annotated[PolygonCutterDTO, Depends(PolygonCutterDTO)],
+        token: str = Depends(verify_bearer_token),
+        genplanner_service: GenPlannerService = Depends(get_genplanner_service),
+        config: Config = Depends(get_config)):
+    return await genplanner_service.cut_scenario_territory(params, config, token)

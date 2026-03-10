@@ -1,6 +1,9 @@
 from genplanner import basic_func_zone
 from genplanner import default_func_zones as func_zones
 from genplanner import default_terr_zones as terr_zones
+#TODO мапинги из id в terrytory_zone_kind
+#все существующие мапы нужно дропнуть
+
 
 scenario_func_zones_map = {
     8: basic_func_zone,
