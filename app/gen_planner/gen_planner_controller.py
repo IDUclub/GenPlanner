@@ -9,6 +9,7 @@ from app.dependencies import get_config, get_genplanner_service
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from app.gen_planner.schema.gen_planner_schema import GenPlannerResultSchema
+from . import gen_planner_service
 
 from .dto.examples import gen_planner_func_zone_dto_example
 from .dto.gen_planner_cutter_dto import PolygonCutterDTO
@@ -78,3 +79,10 @@ async def get_cut_polygons(
         genplanner_service: GenPlannerService = Depends(get_genplanner_service),
         config: Config = Depends(get_config)):
     return await genplanner_service.cut_scenario_territory(params, config, token)
+
+@gen_planner_router.get("/default_matrix")
+async def get_default_matrix(
+    genplanner_service: GenPlannerService = Depends(get_genplanner_service),
+):
+    return await genplanner_service.get_default_matrix()
+

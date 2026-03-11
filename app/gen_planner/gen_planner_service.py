@@ -5,6 +5,7 @@ from typing import Literal
 import geopandas as gpd
 import pandas as pd
 from genplanner import GenPlanner, TerritoryZone
+from genplanner.zones import TerritoryZoneKind
 from iduconfig import Config
 from loguru import logger
 from shapely import buffer
@@ -14,7 +15,7 @@ from genplanner.zone_relations.forbidden_terr_kind import FORBIDDEN_NEIGHBORHOOD
 
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
-from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
+from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map, default_terr_zones_map
 
 from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
@@ -412,4 +413,33 @@ class GenPlannerService:
 
         return cut_gdf.to_geo_dict()
 
+    async def get_default_matrix(self) -> dict[str, list[tuple[int, int]]]:
+        """
+        Build default forbidden neighborhood pairs mapped to territory zone ids.
+        """
+        kind_to_ids: dict[TerritoryZoneKind, list[int]] = {}
+
+        for zone_id_str, zone in default_terr_zones_map.items():
+            zone_id = int(zone_id_str)
+            kind_to_ids.setdefault(zone.kind, []).append(zone_id)
+
+        forbidden_pairs_set: set[tuple[int, int]] = set()
+
+        for left_kind, right_kind in FORBIDDEN_NEIGHBORHOOD:
+            left_ids = kind_to_ids.get(left_kind, [])
+            right_ids = kind_to_ids.get(right_kind, [])
+
+            for left_id in left_ids:
+                for right_id in right_ids:
+                    if left_id == right_id:
+                        continue
+
+                    pair = tuple(sorted((left_id, right_id)))
+                    forbidden_pairs_set.add(pair)
+
+        forbidden_pairs = sorted(forbidden_pairs_set)
+
+        return {
+            "forbidden_pairs": forbidden_pairs,
+        }
 
