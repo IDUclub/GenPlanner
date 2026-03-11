@@ -15,7 +15,7 @@ from genplanner.zone_relations.forbidden_terr_kind import FORBIDDEN_NEIGHBORHOOD
 
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
-from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map, default_terr_zones_map
+from app.common.constants.api_constants import scenario_func_zones_map, default_terr_zones_map
 
 from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
@@ -222,7 +222,9 @@ class GenPlannerService:
                 source=functional_zones.source,
             )
             func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
-            func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
+            func_zones["territory_zone"] = (
+                func_zones["functional_zone_type_id"].astype(str).map(default_terr_zones_map)
+            )
 
             fixed_ids = params.functional_zones.fixed_functional_zones_ids or []
 
@@ -247,8 +249,11 @@ class GenPlannerService:
             logger.info(f"func_zones ids: {func_zones['functional_zone_id']}")
             logger.info(f"Only on zones: {only_on_zones}")
 
-        roads_extend_distance = getattr(params, "roads_extend_distance", 5)
-
+        roads_extend_distance = (
+            params.roads_extend_distance
+            if getattr(params, "roads_extend_distance", None) is not None
+            else 5
+        )
         return GenPlanner(
             params._territory_gdf,
             **objects,
@@ -274,22 +279,87 @@ class GenPlannerService:
 
     @staticmethod
     async def form_genplanner_response(
-        zones: gpd.GeoDataFrame, roads: gpd.GeoDataFrame
+            zones: gpd.GeoDataFrame,
+            roads: gpd.GeoDataFrame,
+            compact: bool = False,
     ) -> dict[Literal["zones", "roads"], dict]:
         """
         Function forms GenPlannerResultSchema from the given roads and zones GeoDataFrames.
+
         Args:
             roads (gpd.GeoDataFrame): Roads GeoDataFrame.
             zones (gpd.GeoDataFrame): Zones GeoDataFrame.
+            compact (bool): Whether to keep only compact zone properties.
+
         Returns:
-            GenPlannerResultSchema: GenPlanner result schema with the given roads and zones.
+            dict[Literal["zones", "roads"], dict]: Serialized GenPlanner result.
         """
+        zones = zones.copy()
+
+        reverse_default_zone_map: dict[TerritoryZone, int] = {
+            zone: int(zone_id)
+            for zone_id, zone in default_terr_zones_map.items()
+        }
+
+        kind_to_default_id: dict[TerritoryZoneKind, int] = {}
+        for zone_id, zone in default_terr_zones_map.items():
+            kind_to_default_id.setdefault(zone.kind, int(zone_id))
+
+        if "functional_zone_id" not in zones.columns:
+            zones["functional_zone_id"] = None
+
+        if "functional_zone_type_id" not in zones.columns:
+            zones["functional_zone_type_id"] = None
+
+        zones["is_generated"] = zones["functional_zone_id"].isna()
 
         if "territory_zone" in zones.columns:
-            zones["territory_zone"] = zones["territory_zone"].apply(lambda x: x.name if x and not pd.isna(x) else None)
+            zones["_territory_zone_obj"] = zones["territory_zone"]
+
+            zones["territory_zone_name"] = zones["_territory_zone_obj"].apply(
+                lambda x: x.kind.value if x is not None and not pd.isna(x) else None
+            )
+
+            def _resolve_territory_zone_id(row: pd.Series) -> int | None:
+                """
+                Resolve mapped territory zone id for output.
+                """
+                functional_zone_type_id = row.get("functional_zone_type_id")
+                if pd.notna(functional_zone_type_id):
+                    return int(functional_zone_type_id)
+
+                territory_zone = row.get("_territory_zone_obj")
+                if territory_zone is None or pd.isna(territory_zone):
+                    return None
+
+                exact_id = reverse_default_zone_map.get(territory_zone)
+                if exact_id is not None:
+                    return exact_id
+
+                return kind_to_default_id.get(territory_zone.kind)
+
+            zones["territory_zone"] = zones.apply(_resolve_territory_zone_id, axis=1)
+
         if "func_zone" in zones.columns:
             zones.drop(columns="func_zone", inplace=True)
-        return {"zones": json.loads(zones.to_json()), "roads": json.loads(roads.to_json())}
+
+        if "_territory_zone_obj" in zones.columns:
+            zones.drop(columns="_territory_zone_obj", inplace=True)
+
+        if compact:
+            allowed_columns = [
+                "geometry",
+                "territory_zone",
+                "territory_zone_name",
+                "functional_zone_id",
+                "is_generated",
+            ]
+            zones = zones[[col for col in allowed_columns if col in zones.columns]].copy()
+
+        return {
+            "zones": json.loads(zones.to_json()),
+            "roads": json.loads(roads.to_json()),
+        }
 
     @staticmethod
     async def log_request_params(params: GenPlannerFuncZonesDTO, start: bool) -> None:
@@ -367,7 +437,7 @@ class GenPlannerService:
                 to_add["geometry"] = to_add.geometry.apply(lambda g: g.difference(mask) if g else g)
                 to_add = to_add[to_add.geometry.notna() & ~to_add.geometry.is_empty]
             zones = pd.concat([zones, to_add], ignore_index=True)
-        res = await self.form_genplanner_response(zones, roads)
+        res = await self.form_genplanner_response(zones, roads, on_zones_only)
         await self.log_request_params(params, False)
         return GenPlannerResultSchema(**res)
 
@@ -391,14 +461,23 @@ class GenPlannerService:
 
     # TODO revise for more convenient way later
     @staticmethod
-    async def get_func_zone_ratio(zone_id: int) -> dict:
-
+    async def get_func_zone_ratio(zone_id: int) -> dict[int, float]:
+        """
+        Return functional zone ratios mapped to default territory zone ids.
+        """
         func_zone = scenario_func_zones_map[zone_id]
-        reverse_ter = {}
-        for k, v in scenario_ter_zones_map.items():
-            if v not in reverse_ter:
-                reverse_ter[v] = k
-        return {reverse_ter[k]: round(func_zone.zones_ratio[k], 2) for k in func_zone.zones_ratio.keys()}
+
+        kind_to_default_id: dict[TerritoryZoneKind, int] = {}
+        for zone_id_str, terr_zone in default_terr_zones_map.items():
+            zone_int = int(zone_id_str)
+            if terr_zone.kind not in kind_to_default_id:
+                kind_to_default_id[terr_zone.kind] = zone_int
+
+        return {
+            kind_to_default_id[terr_zone.kind]: round(ratio, 2)
+            for terr_zone, ratio in func_zone.zones_ratio.items()
+            if terr_zone.kind in kind_to_default_id
+        }
 
     async def cut_scenario_territory(self, params, config: Config, token: str):
         await self.log_request_params(params, True)

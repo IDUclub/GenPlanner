@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from iduconfig import Config
 
 from app.common.auth.bearer import verify_bearer_token
-from app.common.constants.api_constants import scenario_func_zones_map, scenario_ter_zones_map
+from app.common.constants.api_constants import scenario_func_zones_map
 from app.dependencies import get_config, get_genplanner_service
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO

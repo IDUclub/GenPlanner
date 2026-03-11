@@ -4,7 +4,7 @@ import geopandas as gpd
 from genplanner import FunctionalZone, TerritoryZone
 from pydantic import BaseModel, Field, model_validator
 
-from app.common.constants.api_constants import scenario_ter_zones_map, name_id_map
+from app.common.constants.api_constants import default_terr_zones_map
 from app.common.geometries_dto.geometries import FixZoneFeatureCollection
 
 
@@ -90,28 +90,19 @@ class GenPlannerFuncZonesDTO(BaseModel):
     @model_validator(mode="after")
     def assign_custom_ter_zone_name(self) -> Self:
         """
-        Build custom territorial and functional zone representations from the provided territory
-        balance.  In GenPlanner 1.0.0 the `TerritoryZone` constructor expects a zone kind
-        (string or `TerritoryZoneKind`) rather than the numeric ID used previously.  We use
-        the kind from the default territory zones (`scenario_ter_zones_map`) and apply any
-        custom minimum block area if provided.  A `FunctionalZone` is then created from
-        these territory zones and the requested ratios.
+        Build custom territorial and functional zone objects based on request mappings.
         """
         id_to_zone: dict[int, TerritoryZone] = {}
-        id_to_name: dict[int, str] = {v: k for k, v in name_id_map.items()}
+        min_block_area_map = self.min_block_area or {}
 
-        for k in self.territory_balance.keys():
-            key_int = int(k)
+        for zone_id in self.territory_balance.keys():
+            key_int = int(zone_id)
+            base_zone = default_terr_zones_map.get(str(key_int))
 
-            if key_int not in scenario_ter_zones_map:
+            if base_zone is None:
                 continue
 
-            base_zone = scenario_ter_zones_map[key_int]
-            min_area = (
-                (self.min_block_area or {}).get(key_int)
-                if (self.min_block_area or {}).get(key_int) is not None
-                else base_zone.min_block_area
-            )
+            min_area = min_block_area_map.get(key_int, base_zone.min_block_area)
 
             id_to_zone[key_int] = TerritoryZone(
                 kind=base_zone.kind,
@@ -122,12 +113,16 @@ class GenPlannerFuncZonesDTO(BaseModel):
         self._custom_id_ter_zone_map = id_to_zone
 
         zone_ratio_mapping: dict[TerritoryZone, float] = {}
-        for k, ratio in self.territory_balance.items():
-            key_int = int(k)
-            if key_int in id_to_zone:
-                zone_ratio_mapping[id_to_zone[key_int]] = ratio
+        for zone_id, ratio in self.territory_balance.items():
+            key_int = int(zone_id)
+            zone = id_to_zone.get(key_int)
+            if zone is not None:
+                zone_ratio_mapping[zone] = ratio
 
-        self._custom_func_zone = FunctionalZone(zone_ratio_mapping, name="Automatically formed zone")
+        self._custom_func_zone = FunctionalZone(
+            zone_ratio_mapping,
+            name="Automatically formed zone",
+        )
         return self
 
     @model_validator(mode="after")

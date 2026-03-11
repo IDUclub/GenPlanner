@@ -3,10 +3,6 @@ from genplanner import default_func_zones as func_zones
 from genplanner import default_terr_zones as terr_zones
 from genplanner.zones import TerritoryZoneKind
 
-#TODO мапинги из id в terrytory_zone_kind
-#все существующие мапы нужно дропнуть
-
-
 scenario_func_zones_map = {
     8: basic_func_zone,
     1: func_zones.residential_func_zone,
@@ -22,30 +18,6 @@ scenario_func_zones_map = {
     13: func_zones.residential_func_zone,
 }
 
-scenario_ter_zones_map = {
-    1: terr_zones.residential_terr,
-    4: terr_zones.industrial_terr,
-    7: terr_zones.business_terr,
-    2: terr_zones.recreation_terr,
-    6: terr_zones.transport_terr,
-    5: terr_zones.agriculture_terr,
-    3: terr_zones.special_terr,
-    10: terr_zones.residential_terr,
-    11: terr_zones.residential_terr,
-    12: terr_zones.residential_terr,
-    13: terr_zones.residential_terr,
-}
-
-custom_func_zones_map_by_name = {
-    "basic": basic_func_zone,
-    "residential territory": func_zones.residential_func_zone,
-    "industrial territory": func_zones.industrial_func_zone,
-    "business territory": func_zones.business_func_zone,
-    "transport territory": func_zones.transport_func_zone,
-    "agriculture territory": func_zones.agricalture_func_zone,
-    "special territory": func_zones.special_func_zone,
-    "recreation territory": func_zones.recreation_func_zone,
-}
 
 custom_ter_zones_map_by_name = {
     "residential": terr_zones.residential_terr,
@@ -55,16 +27,6 @@ custom_ter_zones_map_by_name = {
     "transport": terr_zones.transport_terr,
     "agriculture": terr_zones.agriculture_terr,
     "special": terr_zones.special_terr,
-}
-
-name_id_map = {
-    "residential": 1,
-    "industrial": 4,
-    "business": 7,
-    "recreation": 2,
-    "transport": 6,
-    "agricalture": 5,
-    "special": 3,
 }
 
 default_terr_zones_map = {
