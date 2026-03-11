@@ -4,10 +4,13 @@ from typing import Literal
 
 import geopandas as gpd
 import pandas as pd
-from genplanner import GenPlanner
+from genplanner import GenPlanner, TerritoryZone
 from iduconfig import Config
 from loguru import logger
 from shapely import buffer
+
+from genplanner.zone_relations.relation_matrix import Relation, ZoneRelationMatrix
+from genplanner.zone_relations.forbidden_terr_kind import FORBIDDEN_NEIGHBORHOOD
 
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
@@ -139,6 +142,52 @@ class GenPlannerService:
         params._territory_gdf = await self.urban_api_client.get_territory_geom_by_project_id(project_id, token)
         return params
 
+    def _build_relation_matrix_arg(self, params: GenPlannerFuncZonesDTO) -> str | ZoneRelationMatrix:
+        """Build relation_matrix argument for GenPlanner from request fields.
+
+        Returns:
+            "default" if no custom relations were provided.
+            "empty" if ignore_default_relations=True and no zones mapping available.
+            ZoneRelationMatrix instance otherwise.
+        """
+
+        has_custom = bool(params.neighbour_pairs or params.forbidden_pairs or params.ignore_default_relations)
+        if not has_custom:
+            return "default"
+
+        zone_map: dict[int, TerritoryZone] = params._custom_id_ter_zone_map or {}
+        zones = list(zone_map.values())
+        if not zones:
+            return "empty" if params.ignore_default_relations else "default"
+
+        if params.ignore_default_relations:
+            matrix = ZoneRelationMatrix.empty(zones)
+        else:
+            matrix = ZoneRelationMatrix.from_kind_forbidden(zones=zones, kind_forbidden=FORBIDDEN_NEIGHBORHOOD)
+
+        def _pairs(pairs: list[tuple[int, int]] | None) -> list[tuple[TerritoryZone, TerritoryZone]]:
+            out: list[tuple[TerritoryZone, TerritoryZone]] = []
+            if not pairs:
+                return out
+            for a_id, b_id in pairs:
+                a = zone_map.get(int(a_id))
+                b = zone_map.get(int(b_id))
+                if not a or not b:
+                    logger.warning(f"Skipping relation pair ({a_id}, {b_id}) because zone id is not in territory_balance")
+                    continue
+                out.append((a, b))
+            return out
+
+        n_pairs = _pairs(params.neighbour_pairs)
+        if n_pairs:
+            matrix = matrix.with_pairs(n_pairs, Relation.NEIGHBOR)
+
+        f_pairs = _pairs(params.forbidden_pairs)
+        if f_pairs:
+            matrix = matrix.with_pairs(f_pairs, Relation.FORBIDDEN)
+
+        return matrix
+
     async def form_genplanner(
             self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
     ) -> GenPlanner:
@@ -174,15 +223,21 @@ class GenPlannerService:
             func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
             func_zones["territory_zone"] = func_zones["functional_zone_type_id"].map(scenario_ter_zones_map)
 
-            if only_on_zones:
-                params._initial_zones_to_add = func_zones[
-                    ~func_zones["functional_zone_id"].isin(functional_zones.fixed_functional_zones_ids)
-                ]
-                params._territory_gdf = func_zones.copy()
+            fixed_ids = params.functional_zones.fixed_functional_zones_ids or []
 
-            func_zones = func_zones[
-                func_zones["functional_zone_id"].isin(functional_zones.fixed_functional_zones_ids)
-            ]
+            if only_on_zones and fixed_ids:
+                selected = func_zones[func_zones["functional_zone_id"].isin(fixed_ids)].copy()
+                if selected.empty:
+                    raise http_exception(
+                        status_code=422,
+                        msg="Selected functional zone ids not found",
+                        _detail={"fixed_functional_zones_ids": fixed_ids},
+                        _input={"scenario_id": params.scenario_id, "project_id": params.project_id},
+                    )
+
+                params._initial_zones_to_add = func_zones[~func_zones["functional_zone_id"].isin(fixed_ids)].copy()
+                params._territory_gdf = selected
+                func_zones = None
         else:
             func_zones = None
 
@@ -191,7 +246,7 @@ class GenPlannerService:
             logger.info(f"func_zones ids: {func_zones['functional_zone_id']}")
             logger.info(f"Only on zones: {only_on_zones}")
 
-        roads_extend_distance = getattr(params, "roads_extend_distance", None)
+        roads_extend_distance = getattr(params, "roads_extend_distance", 5)
 
         return GenPlanner(
             params._territory_gdf,
@@ -280,13 +335,37 @@ class GenPlannerService:
             config,
             on_zones_only,
         )
+
+        relation_matrix_arg = self._build_relation_matrix_arg(params)
+
         zones, roads = await asyncio.to_thread(
             genplanner.features2terr_zones2blocks,
             funczone=params._custom_func_zone,
+            relation_matrix=relation_matrix_arg,
             terr_zones_fix_points=params._fix_zones_gdf,
         )
-        if on_zones_only:
-            zones = pd.concat([zones, params._initial_zones_to_add])
+
+        if (
+            on_zones_only
+            and params.functional_zones
+            and (params.functional_zones.fixed_functional_zones_ids or [])
+            and params._initial_zones_to_add is not None
+            and not params._initial_zones_to_add.empty
+        ):
+            to_add = params._initial_zones_to_add.copy()
+            sel = params._territory_gdf
+            if sel is not None and not sel.empty:
+                mask_geom = sel.geometry
+                mask_geom = mask_geom[mask_geom.notna() & ~mask_geom.is_empty]
+                try:
+                    mask = mask_geom.make_valid().unary_union
+                except Exception:
+                    mask = mask_geom.unary_union
+
+                to_add = to_add[to_add.geometry.notna() & ~to_add.geometry.is_empty]
+                to_add["geometry"] = to_add.geometry.apply(lambda g: g.difference(mask) if g else g)
+                to_add = to_add[to_add.geometry.notna() & ~to_add.geometry.is_empty]
+            zones = pd.concat([zones, to_add], ignore_index=True)
         res = await self.form_genplanner_response(zones, roads)
         await self.log_request_params(params, False)
         return GenPlannerResultSchema(**res)

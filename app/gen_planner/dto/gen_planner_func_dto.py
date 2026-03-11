@@ -12,8 +12,10 @@ class FuncZonesInfoDTO(BaseModel):
 
     year: int = Field(examples=[2025], description="Year of functional zones")
     source: Literal["PZZ", "OSM", "User"] = Field(examples=["User"], description="Source of functional zones")
-    fixed_functional_zones_ids: list[int] = Field(
-        examples=[1619712], description="IDs of functional zones to take into account"
+    fixed_functional_zones_ids: list[int] | None = Field(
+        default=None,
+        examples=[[1619712], None, []],
+        description="IDs of functional zones to take into account",
     )
 
 
@@ -60,6 +62,29 @@ class GenPlannerFuncZonesDTO(BaseModel):
     territory_balance: dict[int, float] = Field(
         description="Balance of functional zones by ID",
         min_length=1,
+    )
+    neighbour_pairs: list[tuple[int, int]] | None = Field(
+        default=None,
+        description=(
+            "List of territorial zone ID pairs that should be treated as neighbours in the relation matrix. "
+            "Pairs are symmetric: (a,b) and (b,a) are equivalent."
+        ),
+        examples=[[(6, 2), (3, 7)]],
+    )
+    forbidden_pairs: list[tuple[int, int]] | None = Field(
+        default=None,
+        description=(
+            "List of territorial zone ID pairs that are forbidden neighbours in the relation matrix. "
+            "Pairs are symmetric."
+        ),
+        examples=[[(2, 7)]],
+    )
+    ignore_default_relations: bool = Field(
+        default=False,
+        description=(
+            "If True, do not apply GenPlanner's default forbidden neighbourhood rules when building the relation "
+            "matrix. When False, defaults are applied first and then overridden by neighbour_pairs/forbidden_pairs."
+        ),
     )
 
     @model_validator(mode="after")
