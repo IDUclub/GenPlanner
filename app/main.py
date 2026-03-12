@@ -28,7 +28,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# app.add_middleware(ExceptionHandlerMiddleware)
+app.add_middleware(ExceptionHandlerMiddleware)
 
 
 @app.get("/", response_model=dict[str, str])

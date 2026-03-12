@@ -382,6 +382,49 @@ class GenPlannerService:
                     """
         )
 
+    @staticmethod
+    async def _run_features_generation_with_retries(
+            genplanner: GenPlanner,
+            funczone,
+            relation_matrix,
+            terr_zones_fix_points,
+            attempts: int = 3,
+            delay_seconds: float = 0.5,
+    ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+        """
+        Run GenPlanner generation with retries for intermittent library failures.
+        """
+        last_exception: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                logger.info(
+                    f"Running GenPlanner generation attempt {attempt}/{attempts}"
+                )
+                zones, roads = await asyncio.to_thread(
+                    genplanner.features2terr_zones2blocks,
+                    funczone=funczone,
+                    relation_matrix=relation_matrix,
+                    terr_zones_fix_points=terr_zones_fix_points,
+                )
+                logger.info(
+                    f"GenPlanner generation attempt {attempt}/{attempts} succeeded"
+                )
+                return zones, roads
+            except Exception as exc:
+                last_exception = exc
+                logger.exception(
+                    f"GenPlanner generation attempt {attempt}/{attempts} failed: {exc}"
+                )
+
+                if attempt < attempts:
+                    await asyncio.sleep(delay_seconds)
+
+        if last_exception is not None:
+            raise last_exception
+
+        raise RuntimeError("GenPlanner generation failed without captured exception")
+
     async def run_func_generation(
         self,
         params: GenPlannerFuncZonesDTO,
@@ -409,11 +452,13 @@ class GenPlannerService:
 
         relation_matrix_arg = self._build_relation_matrix_arg(params)
 
-        zones, roads = await asyncio.to_thread(
-            genplanner.features2terr_zones2blocks,
+        zones, roads = await self._run_features_generation_with_retries(
+            genplanner=genplanner,
             funczone=params._custom_func_zone,
             relation_matrix=relation_matrix_arg,
             terr_zones_fix_points=params._fix_zones_gdf,
+            attempts=3,
+            delay_seconds=0.5,
         )
 
         if (
