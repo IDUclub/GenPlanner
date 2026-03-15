@@ -32,4 +32,7 @@ gen_planner_func_zone_dto_example["requestBody"]["content"]["application/json"][
     "min_block_area": {"6": 160000, "2": 130000, "7": 100000},
     "functional_zones": {"year": 2025, "source": "User", "fixed_functional_zones_ids": [1619712]},
     "territory_balance": {"6": 0.4, "2": 0.3, "3": 0.1, "7": 0.2},
+    "neighbour_pairs": [[6, 2], [3, 7]],
+    "forbidden_pairs": [[2, 7]],
+    "ignore_default_relations": False,
 }
