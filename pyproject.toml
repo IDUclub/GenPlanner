@@ -1,7 +1,7 @@
 [tool.poetry]
 package-mode = false
 name = "GenPlannerAPI"
-version = "0.3.4"
+version = "0.3.5"
 license = "BSD-3-Clause"
 description = "REST API APP on FastAPI framework for genplanner lib integration to 'Prostor' platform"
 authors = ["LeonDeTur <100690100+LeonDeTur@users.noreply.github.com>"]
@@ -24,7 +24,7 @@ aiohttp = "^3.11.10"
 pulp = "^3.1.1"
 seaborn = "^0.13.2"
 idu-config = ">=1.0.3,<2.0.0"
-genplanner = ">=0.1.0,<0.2.0"
+genplanner = "^1.0.2"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.2.0"
