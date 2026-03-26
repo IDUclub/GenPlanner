@@ -160,9 +160,6 @@ class GenPlannerService:
         zones = list(zone_map.values())
         if not zones:
             return "empty" if params.ignore_default_relations else "default"
-
-        if params.ignore_default_relations:
-            matrix = ZoneRelationMatrix.empty(zones)
         else:
             matrix = ZoneRelationMatrix.from_kind_forbidden(zones=zones, kind_forbidden=FORBIDDEN_NEIGHBORHOOD)
 
@@ -189,19 +186,40 @@ class GenPlannerService:
 
         return matrix
 
+    def _split_functional_zones_by_fixed_ids(
+            self,
+            func_zones: gpd.GeoDataFrame,
+            fixed_ids: list[int],
+            scenario_id: int,
+            project_id: int,
+    ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+        """
+        Split functional zones into fixed and remaining subsets.
+        """
+        if not fixed_ids:
+            return gpd.GeoDataFrame(columns=func_zones.columns), func_zones.copy()
+
+        found_ids = set(func_zones["functional_zone_id"].tolist())
+        missing_ids = sorted(set(fixed_ids) - found_ids)
+        if missing_ids:
+            raise http_exception(
+                status_code=422,
+                msg="Selected functional zone ids not found",
+                _detail={"fixed_functional_zones_ids": missing_ids},
+                _input={"scenario_id": scenario_id, "project_id": project_id},
+            )
+
+        fixed_mask = func_zones["functional_zone_id"].isin(fixed_ids)
+        fixed_zones = func_zones[fixed_mask].copy()
+        remaining_zones = func_zones[~fixed_mask].copy()
+        return fixed_zones, remaining_zones
+
     async def form_genplanner(
             self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
     ) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
-        Args:
-            params (GenPlannerFuncZonesDTO): Parameters for the generation.
-            token (str): User bearer access token.
-            only_on_zones (bool): Weather to generate only using requested zones.
-        Returns:
-            GenPlanner: GenPlanner object with the given parameters.
         """
-
         params = await self.restore_params(params, token)
 
         elevation_angle = getattr(params, "elevation_angle", None)
@@ -213,6 +231,8 @@ class GenPlannerService:
             elevation_angle,
             token,
         )
+
+        existing_func_zones = None
 
         if functional_zones is not None:
             func_zones = await self.urban_api_client.get_functional_zones(
@@ -228,36 +248,33 @@ class GenPlannerService:
 
             fixed_ids = params.functional_zones.fixed_functional_zones_ids or []
 
-            if only_on_zones and fixed_ids:
-                selected = func_zones[func_zones["functional_zone_id"].isin(fixed_ids)].copy()
-                if selected.empty:
-                    raise http_exception(
-                        status_code=422,
-                        msg="Selected functional zone ids not found",
-                        _detail={"fixed_functional_zones_ids": fixed_ids},
-                        _input={"scenario_id": params.scenario_id, "project_id": params.project_id},
-                    )
+            fixed_zones, remaining_zones = self._split_functional_zones_by_fixed_ids(
+                func_zones=func_zones,
+                fixed_ids=fixed_ids,
+                scenario_id=params.scenario_id,
+                project_id=params.project_id,
+            )
 
-                params._initial_zones_to_add = func_zones[~func_zones["functional_zone_id"].isin(fixed_ids)].copy()
-                params._territory_gdf = selected
-                func_zones = None
+            if only_on_zones:
+                if fixed_ids:
+                    params._initial_zones_to_add = remaining_zones
+                    params._territory_gdf = fixed_zones
+                existing_func_zones = None
+            else:
+                existing_func_zones = fixed_zones if fixed_ids else None
         else:
-            func_zones = None
-
-        logger.info(f"func_zones: {type(func_zones)}")
-        if isinstance(func_zones, gpd.GeoDataFrame):
-            logger.info(f"func_zones ids: {func_zones['functional_zone_id']}")
-            logger.info(f"Only on zones: {only_on_zones}")
+            existing_func_zones = None
 
         roads_extend_distance = (
             params.roads_extend_distance
             if getattr(params, "roads_extend_distance", None) is not None
             else 5
         )
+
         return GenPlanner(
             params._territory_gdf,
             **objects,
-            existing_terr_zones=None if only_on_zones else func_zones,
+            existing_terr_zones=existing_func_zones,
             roads_extend_distance=roads_extend_distance,
             simplify_geometry_value=0.01,
             parallel=False if config.get("APP_ENV") == "development" else True,

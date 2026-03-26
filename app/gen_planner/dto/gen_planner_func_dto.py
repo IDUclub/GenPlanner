@@ -79,13 +79,9 @@ class GenPlannerFuncZonesDTO(BaseModel):
         ),
         examples=[[(2, 7)]],
     )
-    ignore_default_relations: bool = Field(
+    test: bool = Field(
         default=False,
-        description=(
-            "If True, do not apply GenPlanner's default forbidden neighbourhood rules when building the relation "
-            "matrix. When False, defaults are applied first and then overridden by neighbour_pairs/forbidden_pairs."
-        ),
-    )
+        description=("Flag for requesting testing DB or not."),)
 
     @model_validator(mode="after")
     def assign_custom_ter_zone_name(self) -> Self:
