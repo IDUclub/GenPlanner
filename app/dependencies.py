@@ -11,8 +11,9 @@ def get_config(request: Request) -> Config:
     return request.app.state.config
 
 
-def get_genplanner_service(request: Request) -> GenPlannerService:
-
+def get_genplanner_service(request: Request, test: bool=False) -> GenPlannerService:
+    if test:
+        return request.app.state.test_genplanner_service
     return request.app.state.genplanner_service
 
 
