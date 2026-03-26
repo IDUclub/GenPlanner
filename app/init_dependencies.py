@@ -30,10 +30,15 @@ async def init_dependencies(app: FastAPI):
 
     # gen_planner_service initialisation
     urban_api_handler = AsyncJsonApiHandler(app.state.config.get("URBAN_API"))
+    test_urban_api_handler = AsyncJsonApiHandler(app.state.config.get("TEST_URBAN_API"))
     urban_api_client = UrbanApiClient(urban_api_handler, int(app.state.config.get("MAX_API_ASYNC_EXTRACTIONS")))
+    test_urban_api_client = UrbanApiClient(test_urban_api_handler, int(app.state.config.get("MAX_API_ASYNC_EXTRACTIONS")))
     ecodonut_api_handler = AsyncJsonApiHandler(app.state.config.get("ECODONUT_API"))
     ecodonut_api_client = EcodonutApiClient(
         ecodonut_api_handler, int(app.state.config.get("MAX_API_ASYNC_EXTRACTIONS"))
     )
     app.state.genplanner_service = GenPlannerService(urban_api_client, ecodonut_api_client)
+    app.state.test_genplanner_service = GenPlannerService(test_urban_api_client, ecodonut_api_client)
     logger.info("Initialized app dependencies")
+
+
