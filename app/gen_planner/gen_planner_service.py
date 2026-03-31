@@ -214,8 +214,153 @@ class GenPlannerService:
         remaining_zones = func_zones[~fixed_mask].copy()
         return fixed_zones, remaining_zones
 
+    def _empty_like(self, gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Create an empty GeoDataFrame preserving geometry column and CRS.
+        """
+        return gpd.GeoDataFrame(
+            geometry=gpd.GeoSeries([], crs=gdf.crs),
+            crs=gdf.crs,
+        )
+
+    def _prepare_fixed_zones_for_generation(
+            self,
+            fixed_zones: gpd.GeoDataFrame,
+            territory_gdf: gpd.GeoDataFrame,
+    ) -> gpd.GeoDataFrame:
+        """
+        Validate, clean and clip selected fixed zones by the current territory.
+        """
+        if fixed_zones is None or fixed_zones.empty:
+            return self._empty_like(territory_gdf)
+
+        prepared = fixed_zones.copy()
+        prepared = prepared[
+            prepared.geometry.notna() & ~prepared.geometry.is_empty
+            ].copy()
+
+        if prepared.empty:
+            return self._empty_like(fixed_zones)
+
+        prepared = prepared.clip(territory_gdf, keep_geom_type=True).reset_index(drop=True)
+        prepared = prepared[
+            prepared.geometry.notna() & ~prepared.geometry.is_empty
+            ].copy()
+
+        if prepared.empty:
+            return self._empty_like(fixed_zones)
+
+        return prepared
+
+    def _merge_original_fixed_zones_into_result(
+            self,
+            zones: gpd.GeoDataFrame,
+            fixed_zones: gpd.GeoDataFrame | None,
+    ) -> gpd.GeoDataFrame:
+        """
+        Remove planner-returned geometries that fall into selected fixed zones
+        and append original fixed zones back to the result.
+        """
+        if fixed_zones is None or fixed_zones.empty:
+            return zones
+
+        fixed_zones = fixed_zones.copy()
+        fixed_zones = fixed_zones[
+            fixed_zones.geometry.notna() & ~fixed_zones.geometry.is_empty
+            ].copy()
+
+        if fixed_zones.empty:
+            return zones
+
+        result = zones.copy()
+        result = result[
+            result.geometry.notna() & ~result.geometry.is_empty
+            ].copy()
+
+        try:
+            fixed_union = fixed_zones.geometry.make_valid().unary_union
+        except Exception:
+            fixed_union = fixed_zones.geometry.unary_union
+
+        rep_points = result.geometry.representative_point()
+        result = result[~rep_points.within(fixed_union)].copy()
+
+        return pd.concat([result, fixed_zones], ignore_index=True)
+
+    def _get_allowed_fixed_functional_zone_type_ids(self) -> list[int]:
+        """
+        Return allowed functional zone type ids for fixed functional zones.
+        """
+        return sorted(int(zone_id) for zone_id in default_terr_zones_map.keys())
+
+    def _validate_supported_fixed_functional_zones(
+            self,
+            fixed_zones: gpd.GeoDataFrame,
+            scenario_id: int,
+            project_id: int,
+    ) -> None:
+        """
+        Validate that all selected fixed functional zones can be mapped
+        to TerritoryZone objects supported by GenPlanner.
+        """
+        if fixed_zones is None or fixed_zones.empty:
+            return
+
+        if "territory_zone" not in fixed_zones.columns:
+            raise http_exception(
+                status_code=422,
+                msg="Fixed functional zones validation failed",
+                _detail={
+                    "reason": "Column 'territory_zone' is missing in selected fixed zones"
+                },
+                _input={"scenario_id": scenario_id, "project_id": project_id},
+            )
+
+        unsupported = fixed_zones[fixed_zones["territory_zone"].isna()].copy()
+        if unsupported.empty:
+            return
+
+        unsupported_functional_zone_ids = sorted(
+            unsupported["functional_zone_id"].dropna().astype(int).unique().tolist()
+        )
+
+        unsupported_functional_zone_type_ids = sorted(
+            unsupported["functional_zone_type_id"].dropna().astype(int).unique().tolist()
+        )
+
+        allowed_functional_zone_type_ids = self._get_allowed_fixed_functional_zone_type_ids()
+
+        logger.warning(
+            "Unsupported fixed functional zones detected. "
+            f"functional_zone_ids={unsupported_functional_zone_ids}, "
+            f"functional_zone_type_ids={unsupported_functional_zone_type_ids}, "
+            f"allowed_functional_zone_type_ids={allowed_functional_zone_type_ids}"
+        )
+
+        raise http_exception(
+            status_code=422,
+            msg="Some fixed functional zones are not supported for generation",
+            _detail={
+                "unsupported_functional_zone_ids": unsupported_functional_zone_ids,
+                "unsupported_functional_zone_type_ids": unsupported_functional_zone_type_ids,
+                "allowed_functional_zone_type_ids": allowed_functional_zone_type_ids,
+                "reason": (
+                    "Selected fixed functional zones contain functional_zone_type_id values "
+                    "that cannot be mapped to GenPlanner territory zones"
+                ),
+            },
+            _input={
+                "scenario_id": scenario_id,
+                "project_id": project_id,
+            },
+        )
+
     async def form_genplanner(
-            self, params: GenPlannerFuncZonesDTO, token: str, config: Config, only_on_zones: bool = False
+            self,
+            params: GenPlannerFuncZonesDTO,
+            token: str,
+            config: Config,
+            only_on_zones: bool = False,
     ) -> GenPlanner:
         """
         Function forms GenPlanner object with the given parameters.
@@ -233,6 +378,8 @@ class GenPlannerService:
         )
 
         existing_func_zones = None
+        params._fixed_zones_to_return = gpd.GeoDataFrame()
+        params._initial_zones_to_add = None
 
         if functional_zones is not None:
             func_zones = await self.urban_api_client.get_functional_zones(
@@ -241,7 +388,9 @@ class GenPlannerService:
                 year=functional_zones.year,
                 source=functional_zones.source,
             )
-            func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(lambda x: x["id"])
+            func_zones["functional_zone_type_id"] = func_zones["functional_zone_type"].map(
+                lambda x: x["id"]
+            )
             func_zones["territory_zone"] = (
                 func_zones["functional_zone_type_id"].astype(str).map(default_terr_zones_map)
             )
@@ -255,15 +404,37 @@ class GenPlannerService:
                 project_id=params.project_id,
             )
 
+            self._validate_supported_fixed_functional_zones(
+                fixed_zones=fixed_zones,
+                scenario_id=params.scenario_id,
+                project_id=params.project_id,
+            )
+
+            fixed_zones = self._prepare_fixed_zones_for_generation(
+                fixed_zones=fixed_zones,
+                territory_gdf=params._territory_gdf,
+            )
+
             if only_on_zones:
                 if fixed_ids:
+                    if fixed_zones.empty:
+                        raise http_exception(
+                            status_code=422,
+                            msg="Selected functional zones do not intersect scenario territory",
+                            _detail={"fixed_functional_zones_ids": fixed_ids},
+                            _input={
+                                "scenario_id": params.scenario_id,
+                                "project_id": params.project_id,
+                            },
+                        )
+
                     params._initial_zones_to_add = remaining_zones
-                    params._territory_gdf = fixed_zones
+                    params._territory_gdf = fixed_zones.copy()
+
                 existing_func_zones = None
             else:
-                existing_func_zones = fixed_zones if fixed_ids else None
-        else:
-            existing_func_zones = None
+                params._fixed_zones_to_return = fixed_zones.copy()
+                existing_func_zones = fixed_zones.copy() if not fixed_zones.empty else None
 
         roads_extend_distance = (
             params.roads_extend_distance
@@ -443,23 +614,17 @@ class GenPlannerService:
         raise RuntimeError("GenPlanner generation failed without captured exception")
 
     async def run_func_generation(
-        self,
-        params: GenPlannerFuncZonesDTO,
-        token: str,
-        config: Config,
-        on_zones_only: bool = False,
+            self,
+            params: GenPlannerFuncZonesDTO,
+            token: str,
+            config: Config,
+            on_zones_only: bool = False,
     ) -> GenPlannerResultSchema:
         """
         Function runs the functional generation with the given parameters.
-        Args:
-            params (GenPlannerFuncZonesDTO): Parameters for the functional generation.
-            token (str): User bearer access token.
-            on_zones_only
-        Returns:
-            GenPlannerResultSchema: Result of the functional generation.
         """
-
         await self.log_request_params(params, True)
+
         genplanner = await self.form_genplanner(
             params,
             token,
@@ -479,26 +644,42 @@ class GenPlannerService:
         )
 
         if (
-            on_zones_only
-            and params.functional_zones
-            and (params.functional_zones.fixed_functional_zones_ids or [])
-            and params._initial_zones_to_add is not None
-            and not params._initial_zones_to_add.empty
+                not on_zones_only
+                and getattr(params, "_fixed_zones_to_return", None) is not None
+                and not params._fixed_zones_to_return.empty
+        ):
+            zones = self._merge_original_fixed_zones_into_result(
+                zones=zones,
+                fixed_zones=params._fixed_zones_to_return,
+            )
+
+        if (
+                on_zones_only
+                and params.functional_zones
+                and (params.functional_zones.fixed_functional_zones_ids or [])
+                and params._initial_zones_to_add is not None
+                and not params._initial_zones_to_add.empty
         ):
             to_add = params._initial_zones_to_add.copy()
             sel = params._territory_gdf
+
             if sel is not None and not sel.empty:
                 mask_geom = sel.geometry
                 mask_geom = mask_geom[mask_geom.notna() & ~mask_geom.is_empty]
+
                 try:
                     mask = mask_geom.make_valid().unary_union
                 except Exception:
                     mask = mask_geom.unary_union
 
                 to_add = to_add[to_add.geometry.notna() & ~to_add.geometry.is_empty]
-                to_add["geometry"] = to_add.geometry.apply(lambda g: g.difference(mask) if g else g)
+                to_add["geometry"] = to_add.geometry.apply(
+                    lambda g: g.difference(mask) if g else g
+                )
                 to_add = to_add[to_add.geometry.notna() & ~to_add.geometry.is_empty]
+
             zones = pd.concat([zones, to_add], ignore_index=True)
+
         res = await self.form_genplanner_response(zones, roads, on_zones_only)
         await self.log_request_params(params, False)
         return GenPlannerResultSchema(**res)
