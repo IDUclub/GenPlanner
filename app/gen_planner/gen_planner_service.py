@@ -287,6 +287,74 @@ class GenPlannerService:
 
         return pd.concat([result, fixed_zones], ignore_index=True)
 
+    def _get_allowed_fixed_functional_zone_type_ids(self) -> list[int]:
+        """
+        Return allowed functional zone type ids for fixed functional zones.
+        """
+        return sorted(int(zone_id) for zone_id in default_terr_zones_map.keys())
+
+    def _validate_supported_fixed_functional_zones(
+            self,
+            fixed_zones: gpd.GeoDataFrame,
+            scenario_id: int,
+            project_id: int,
+    ) -> None:
+        """
+        Validate that all selected fixed functional zones can be mapped
+        to TerritoryZone objects supported by GenPlanner.
+        """
+        if fixed_zones is None or fixed_zones.empty:
+            return
+
+        if "territory_zone" not in fixed_zones.columns:
+            raise http_exception(
+                status_code=422,
+                msg="Fixed functional zones validation failed",
+                _detail={
+                    "reason": "Column 'territory_zone' is missing in selected fixed zones"
+                },
+                _input={"scenario_id": scenario_id, "project_id": project_id},
+            )
+
+        unsupported = fixed_zones[fixed_zones["territory_zone"].isna()].copy()
+        if unsupported.empty:
+            return
+
+        unsupported_functional_zone_ids = sorted(
+            unsupported["functional_zone_id"].dropna().astype(int).unique().tolist()
+        )
+
+        unsupported_functional_zone_type_ids = sorted(
+            unsupported["functional_zone_type_id"].dropna().astype(int).unique().tolist()
+        )
+
+        allowed_functional_zone_type_ids = self._get_allowed_fixed_functional_zone_type_ids()
+
+        logger.warning(
+            "Unsupported fixed functional zones detected. "
+            f"functional_zone_ids={unsupported_functional_zone_ids}, "
+            f"functional_zone_type_ids={unsupported_functional_zone_type_ids}, "
+            f"allowed_functional_zone_type_ids={allowed_functional_zone_type_ids}"
+        )
+
+        raise http_exception(
+            status_code=422,
+            msg="Some fixed functional zones are not supported for generation",
+            _detail={
+                "unsupported_functional_zone_ids": unsupported_functional_zone_ids,
+                "unsupported_functional_zone_type_ids": unsupported_functional_zone_type_ids,
+                "allowed_functional_zone_type_ids": allowed_functional_zone_type_ids,
+                "reason": (
+                    "Selected fixed functional zones contain functional_zone_type_id values "
+                    "that cannot be mapped to GenPlanner territory zones"
+                ),
+            },
+            _input={
+                "scenario_id": scenario_id,
+                "project_id": project_id,
+            },
+        )
+
     async def form_genplanner(
             self,
             params: GenPlannerFuncZonesDTO,
@@ -332,6 +400,12 @@ class GenPlannerService:
             fixed_zones, remaining_zones = self._split_functional_zones_by_fixed_ids(
                 func_zones=func_zones,
                 fixed_ids=fixed_ids,
+                scenario_id=params.scenario_id,
+                project_id=params.project_id,
+            )
+
+            self._validate_supported_fixed_functional_zones(
+                fixed_zones=fixed_zones,
                 scenario_id=params.scenario_id,
                 project_id=params.project_id,
             )
