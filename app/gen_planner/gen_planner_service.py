@@ -589,6 +589,8 @@ class GenPlannerService:
                 logger.info(
                     f"Running GenPlanner generation attempt {attempt}/{attempts}"
                 )
+                terr_zones_fix_points_utm = terr_zones_fix_points.estimate_utm_crs()
+                terr_zones_fix_points = terr_zones_fix_points.to_crs(terr_zones_fix_points_utm)
                 zones, roads = await asyncio.to_thread(
                     genplanner.features2terr_zones2blocks,
                     funczone=funczone,
