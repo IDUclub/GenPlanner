@@ -355,6 +355,59 @@ class GenPlannerService:
             },
         )
 
+    def _validate_fix_points_within_generation_territory(
+            self,
+            fix_points: gpd.GeoDataFrame | None,
+            generation_territory: gpd.GeoDataFrame | None,
+            scenario_id: int,
+            project_id: int,
+            fixed_functional_zones_ids: list[int] | None = None,
+    ) -> None:
+        """
+        Validate that fix points are located inside the generation territory.
+        """
+        if fix_points is None or fix_points.empty:
+            return
+
+        if generation_territory is None or generation_territory.empty:
+            return
+
+        fp = fix_points.copy()
+        territory = generation_territory.copy()
+
+        fp = fp[fp.geometry.notna() & ~fp.geometry.is_empty].copy()
+        territory = territory[territory.geometry.notna() & ~territory.geometry.is_empty].copy()
+
+        if fp.empty or territory.empty:
+            return
+
+        if fp.crs != territory.crs:
+            fp = fp.to_crs(territory.crs)
+
+        joined = gpd.sjoin(fp, territory[["geometry"]], how="left", predicate="within")
+        invalid_point_indexes = sorted(
+            joined[joined["index_right"].isna()].index.unique().tolist()
+        )
+
+        if not invalid_point_indexes:
+            return
+
+        raise http_exception(
+            status_code=422,
+            msg="Some fix points are outside the generation territory",
+            _detail={
+                "invalid_fix_point_indexes": invalid_point_indexes,
+                "fixed_functional_zones_ids": fixed_functional_zones_ids or [],
+                "reason": (
+                    "Fix points must be placed inside the territory where generation is performed."
+                ),
+            },
+            _input={
+                "scenario_id": scenario_id,
+                "project_id": project_id,
+            },
+        )
+
     async def form_genplanner(
             self,
             params: GenPlannerFuncZonesDTO,
@@ -414,6 +467,14 @@ class GenPlannerService:
                 fixed_zones=fixed_zones,
                 territory_gdf=params._territory_gdf,
             )
+            if not only_on_zones:
+                self._validate_fix_points_within_generation_territory(
+                    fix_points=params._fix_zones_gdf,
+                    generation_territory=params._territory_gdf,
+                    scenario_id=params.scenario_id,
+                    project_id=params.project_id,
+                    fixed_functional_zones_ids=fixed_ids,
+                )
 
             if only_on_zones:
                 if fixed_ids:
@@ -430,6 +491,13 @@ class GenPlannerService:
 
                     params._initial_zones_to_add = remaining_zones
                     params._territory_gdf = fixed_zones.copy()
+                    self._validate_fix_points_within_generation_territory(
+                        fix_points=params._fix_zones_gdf,
+                        generation_territory=params._territory_gdf,
+                        scenario_id=params.scenario_id,
+                        project_id=params.project_id,
+                        fixed_functional_zones_ids=fixed_ids,
+                    )
 
                 existing_func_zones = None
             else:
@@ -589,13 +657,19 @@ class GenPlannerService:
                 logger.info(
                     f"Running GenPlanner generation attempt {attempt}/{attempts}"
                 )
-                terr_zones_fix_points_utm = terr_zones_fix_points.estimate_utm_crs()
-                terr_zones_fix_points = terr_zones_fix_points.to_crs(terr_zones_fix_points_utm)
+
+                fix_points_prepared = None
+                if terr_zones_fix_points is not None and not terr_zones_fix_points.empty:
+                    fix_points_prepared = terr_zones_fix_points.copy()
+                    target_crs = genplanner.territory_to_work_with.crs
+                    if fix_points_prepared.crs != target_crs:
+                        fix_points_prepared = fix_points_prepared.to_crs(target_crs)
+
                 zones, roads = await asyncio.to_thread(
                     genplanner.features2terr_zones2blocks,
                     funczone=funczone,
                     relation_matrix=relation_matrix,
-                    terr_zones_fix_points=terr_zones_fix_points,
+                    terr_zones_fix_points=fix_points_prepared,
                 )
                 logger.info(
                     f"GenPlanner generation attempt {attempt}/{attempts} succeeded"
@@ -632,6 +706,17 @@ class GenPlannerService:
             token,
             config,
             on_zones_only,
+        )
+        self._validate_fix_points_within_generation_territory(
+            fix_points=params._fix_zones_gdf,
+            generation_territory=genplanner.territory_to_work_with,
+            scenario_id=params.scenario_id,
+            project_id=params.project_id,
+            fixed_functional_zones_ids=(
+                params.functional_zones.fixed_functional_zones_ids
+                if params.functional_zones
+                else []
+            ),
         )
 
         relation_matrix_arg = self._build_relation_matrix_arg(params)
