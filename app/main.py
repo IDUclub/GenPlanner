@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
+from app.chat.chat_controller import chat_router
 from app.common.exceptions.exception_handler import ExceptionHandlerMiddleware
 from app.gen_planner.gen_planner_controller import gen_planner_router
 from app.init_dependencies import init_dependencies
@@ -40,3 +41,4 @@ def read_root():
 
 app.include_router(logs_router, prefix="/genplanner")
 app.include_router(gen_planner_router, prefix="/genplanner")
+app.include_router(chat_router, prefix="/genplanner")
