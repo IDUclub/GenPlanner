@@ -13,3 +13,7 @@ target
 *.env.*
 *.log
 *.ipynb
+
+# Claude Code planning/guidance docs -- kept locally, never pushed
+/CLAUDE.md
+/docs/
