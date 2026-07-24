@@ -147,9 +147,11 @@ class GenPlannerService:
         """Build relation_matrix argument for GenPlanner from request fields.
 
         Returns:
-            "default" if no custom relations were provided.
+            "default" if no custom relations and ignore_default_relations=False.
             "empty" if ignore_default_relations=True and no zones mapping available.
-            ZoneRelationMatrix instance otherwise.
+            ZoneRelationMatrix instance otherwise, seeded from FORBIDDEN_NEIGHBORHOOD unless
+            ignore_default_relations=True, in which case it starts empty (neutral) before
+            neighbour_pairs/forbidden_pairs are layered on top.
         """
 
         has_custom = bool(params.neighbour_pairs or params.forbidden_pairs or params.ignore_default_relations)
@@ -160,6 +162,9 @@ class GenPlannerService:
         zones = list(zone_map.values())
         if not zones:
             return "empty" if params.ignore_default_relations else "default"
+
+        if params.ignore_default_relations:
+            matrix = ZoneRelationMatrix.empty(zones)
         else:
             matrix = ZoneRelationMatrix.from_kind_forbidden(zones=zones, kind_forbidden=FORBIDDEN_NEIGHBORHOOD)
 

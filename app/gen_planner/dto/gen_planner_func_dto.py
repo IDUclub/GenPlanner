@@ -79,6 +79,14 @@ class GenPlannerFuncZonesDTO(BaseModel):
         ),
         examples=[[(2, 7)]],
     )
+    ignore_default_relations: bool = Field(
+        default=False,
+        description=(
+            "If True and neither neighbour_pairs nor forbidden_pairs is set, build an empty relation "
+            "matrix instead of the default forbidden-neighborhood one."
+        ),
+        examples=[False],
+    )
     test: bool = Field(
         default=False,
         description=("Flag for requesting testing DB or not."),)
