@@ -16,7 +16,7 @@ loguru = "^0.7.2"
 scipy = "^1.13.1"
 fastapi = "^0.115.6"
 python-dotenv = "^1.0.1"
-uvicorn = "^0.32.1"
+uvicorn = "^0.35"
 gunicorn = "^23.0.0"
 geojson-pydantic = "^1.1.2"
 maturin = "^1.7.4"
@@ -25,6 +25,10 @@ pulp = "^3.1.1"
 seaborn = "^0.13.2"
 idu-config = ">=1.0.3,<2.0.0"
 genplanner = "^1.0.2"
+fastmcp = "^3.3"
+sse-starlette = "^2.3"
+python-jose = {version = "^3.3", extras = ["cryptography"]}
+idu-service-auth = {git = "https://github.com/IDUclub/idu-service-auth.git"}
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.2.0"

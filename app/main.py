@@ -15,6 +15,8 @@ from app.version import __version__ as version
 async def lifespan(app: FastAPI):
     await init_dependencies(app)
     yield
+    if app.state.keycloak_token_client is not None:
+        await app.state.keycloak_token_client.aclose()
 
 
 app = FastAPI(lifespan=lifespan, title="GenPlanner", description="GenPlanner by DDonnyy api service", version=version)
