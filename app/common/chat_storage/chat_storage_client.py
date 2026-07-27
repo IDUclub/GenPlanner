@@ -25,12 +25,13 @@ class ChatStorageClient:
     persistent session held between calls. Authenticated with OUR service account's
     Keycloak token (client_credentials, via `idu_service_auth.KeycloakTokenClient`)
     rather than the end user's token, since chat turns can outlive a short-lived user
-    token; the end user is identified to ChatStorage via the `X-User-Id` header.
+    token; the end user is identified to ChatStorage via the `X-User-Id` header (required
+    when authenticating with a service token, per ChatStorage's own OpenAPI docs).
 
-    NOTE: endpoint paths/payload shapes below follow the interface described for this
-    service (create_chat/add_message/get_chat over user_id + chat_id); confirm them
-    against the actual deployed ChatStorage instance's API contract before relying on
-    this in production, adjusting the paths in this file if they differ.
+    Endpoint paths/payload shapes confirmed against the real deployed instance's
+    /openapi.json ("IDU LLM Chat History"): `create_chat` -> `MessageSchema`/`ChatSchema`
+    responses carry messages as `parts` (kind/payload), never a top-level `content` string,
+    even though the request DTO accepts a plain `content` for convenience.
 
     Attributes:
         base_url (str): ChatStorage base URL.
@@ -82,13 +83,14 @@ class ChatStorageClient:
             dict[str, Any]: At least `{"chat_id": ..., "title": ...}`.
         """
 
-        body = {
+        body: dict[str, Any] = {
             "title": title,
             "scenario_id": scenario_id,
             "project_id": project_id,
-            "metadata": metadata,
         }
-        return await self._request("POST", f"{self.base_url}/chats", user_id, body)
+        if metadata is not None:
+            body["metadata"] = metadata
+        return await self._request("POST", f"{self.base_url}/api/v1/chat_history/create_chat", user_id, body)
 
     async def add_message(
         self,
@@ -108,12 +110,14 @@ class ChatStorageClient:
             dict[str, Any]: At least `{"message_id": ...}`.
         """
 
-        body: dict[str, Any] = {"role": role, "metadata": metadata}
+        body: dict[str, Any] = {"role": role}
+        if metadata is not None:
+            body["metadata"] = metadata
         if parts is not None:
             body["parts"] = parts
         else:
             body["content"] = content
-        return await self._request("POST", f"{self.base_url}/chats/{chat_id}/messages", user_id, body)
+        return await self._request("POST", f"{self.base_url}/api/v1/chat_history/{chat_id}/message", user_id, body)
 
     async def get_chat(self, user_id: str, chat_id: str) -> dict[str, Any]:
         """
@@ -123,7 +127,7 @@ class ChatStorageClient:
             dict[str, Any]: At least `{"chat_id": ..., "messages": [...]}`.
         """
 
-        return await self._request("GET", f"{self.base_url}/chats/{chat_id}", user_id, None)
+        return await self._request("GET", f"{self.base_url}/api/v1/chat_history/{chat_id}", user_id, None)
 
 
 def build_chat_storage_client(config: Config, token_client: KeycloakTokenClient | None) -> "ChatStorageClient | None":
