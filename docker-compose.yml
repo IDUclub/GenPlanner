@@ -8,3 +8,13 @@ services:
       dockerfile: ./Dockerfile
     ports:
       - 80:80
+
+  mcp:
+    image: gen_planner:0.3.2s
+    command: ["python", "-m", "app.mcp_server.main"]
+    ports:
+      - 8766:8766
+    environment:
+      - GENPLANNER_API_BASE_URL=http://gen_planner:80
+    depends_on:
+      - gen_planner
