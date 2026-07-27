@@ -163,7 +163,7 @@ async def stream_chat_turn(
     reply = decision.get("reply") or ""
     patch = decision.get("patch") or {}
 
-    if action == "update_draft" and patch:
+    if patch:
         draft = draft.merge_patch(patch)
 
     result_payload: dict[str, Any] | None = None

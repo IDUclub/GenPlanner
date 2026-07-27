@@ -11,16 +11,22 @@ AGENT_ACTION_SCHEMA: dict = {
             "type": "string",
             "enum": ["update_draft", "ask_clarifying_question", "run_generation", "list_zones", "chat"],
             "description": (
-                "update_draft: user gave new/changed generation parameters. "
+                "update_draft: user gave new/changed generation parameters, nothing else to do yet. "
                 "ask_clarifying_question: need more info before updating or running. "
-                "run_generation: user confirmed and territory_balance is set -- start generation. "
+                "run_generation: user confirmed (or gave a complete balance and asked to run immediately) "
+                "and territory_balance will be set (from patch this turn and/or an earlier turn) -- start "
+                "generation now. "
                 "list_zones: user asked what zones/ids are available. "
                 "chat: anything else (greeting, off-topic, explanation)."
             ),
         },
         "patch": {
             "type": "object",
-            "description": "Partial GenerationDraft update, only present for action=update_draft.",
+            "description": (
+                "Partial GenerationDraft update. Always include any new/changed fields the user just gave, "
+                "even when action=run_generation in the same turn (e.g. user provides territory_balance and "
+                "asks to run right away) -- it is merged before generation is attempted."
+            ),
             "properties": {
                 "territory_balance": {
                     "type": "object",
