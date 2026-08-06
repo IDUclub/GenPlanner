@@ -4,6 +4,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
+from app.gen_planner.dto.gen_planner_func_dto import FuncZonesInfoDTO
 from app.mcp_server.api_client import GenPlannerApiClient, GenPlannerApiError
 from app.mcp_server.auth import extract_token
 
@@ -20,9 +21,24 @@ def register_tools(mcp: FastMCP, client: GenPlannerApiClient) -> None:
 
     @mcp.tool
     async def list_available_zones() -> list[int]:
-        """List the territorial zone IDs GenPlanner can generate."""
+        """List the territorial zone IDs GenPlanner can generate.
+
+        Returns bare ids. Prefer list_zone_types when the caller has to map a word like
+        "жильё" to an id.
+        """
 
         return await _call(client.get("/genplanner/gen_planner/zones_list"))
+
+    @mcp.tool
+    async def list_zone_types() -> list[dict[str, Any]]:
+        """List generatable territorial zones with their kind and Russian name.
+
+        Each entry is {"id", "kind", "name", "profile"} — for example
+        {"id": 1, "kind": "residential", "name": "жилая", "profile": "residential territory"}.
+        Use these ids in territory_balance; never invent a zone id or guess what an id means.
+        """
+
+        return await _call(client.get("/genplanner/gen_planner/zones_reference"))
 
     @mcp.tool
     async def get_func_zone_ratio(zone_id: int) -> dict[str, float]:
@@ -48,6 +64,7 @@ def register_tools(mcp: FastMCP, client: GenPlannerApiClient) -> None:
         min_block_area: dict[int, float] | None = None,
         elevation_angle: int | None = None,
         roads_extend_distance: float | None = None,
+        functional_zones: FuncZonesInfoDTO | None = None,
         ignore_default_relations: bool = False,
         test: bool = False,
     ) -> Any:
@@ -57,6 +74,13 @@ def register_tools(mcp: FastMCP, client: GenPlannerApiClient) -> None:
         territory_balance maps territorial zone ID -> target ratio (must sum sensibly,
         e.g. {6: 0.4, 2: 0.3, 3: 0.1, 7: 0.2}). neighbour_pairs/forbidden_pairs are
         symmetric zone ID pairs overriding the default relation matrix.
+
+        functional_zones selects the generation mode. Omit it to generate from scratch.
+        Pass {"year": 2025, "source": "User"} to amend the scenario's existing functional
+        zones of that source and year instead, optionally keeping some of them untouched
+        via fixed_functional_zones_ids. year and source must come from the caller's
+        session, never be guessed: a wrong pair silently generates against a different
+        zoning layer.
         """
 
         headers = {"Authorization": f"Bearer {token}"}
@@ -78,6 +102,8 @@ def register_tools(mcp: FastMCP, client: GenPlannerApiClient) -> None:
             json_body["forbidden_pairs"] = forbidden_pairs
         if min_block_area is not None:
             json_body["min_block_area"] = min_block_area
+        if functional_zones is not None:
+            json_body["functional_zones"] = functional_zones.model_dump()
 
         return await _call(
             client.post(
