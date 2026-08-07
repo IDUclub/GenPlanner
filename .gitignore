@@ -18,3 +18,4 @@ target
 /CLAUDE.md
 /docs/*
 !/docs/frontend_integration_guide.md
+!/docs/mcp_integration_guide.md
