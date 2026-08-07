@@ -3,6 +3,7 @@ on: workflow_dispatch
 env:
   IMAGE_NAME: ${{secrets.REGISTRY}}/genplanner_api
   CONTAINER_NAME: genplanner_api
+  MCP_CONTAINER_NAME: genplanner_mcp
 
 jobs:
   build:
@@ -32,7 +33,9 @@ jobs:
     needs: build
     steps:
       - name: stop_container
-        run: docker rm -f "$CONTAINER_NAME"
+        run: |
+          docker rm -f "$CONTAINER_NAME" || true
+          docker rm -f "$MCP_CONTAINER_NAME" || true
   run_container:
     runs-on: 102_runner
     needs: [build, stop_container]

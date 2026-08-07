@@ -4,11 +4,11 @@ from fastapi import APIRouter, Depends, Request
 from iduconfig import Config
 
 from app.common.auth.bearer import verify_bearer_token
-from app.common.constants.api_constants import scenario_func_zones_map
+from app.common.constants.api_constants import build_zones_reference, scenario_func_zones_map
 from app.dependencies import get_config, get_genplanner_service
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
-from app.gen_planner.schema.gen_planner_schema import GenPlannerResultSchema
+from app.gen_planner.schema.gen_planner_schema import AvailableZoneSchema, GenPlannerResultSchema
 from . import gen_planner_service
 
 from .dto.examples import gen_planner_func_zone_dto_example
@@ -25,6 +25,16 @@ async def get_available_zones_profiles():
     """
 
     return list(scenario_func_zones_map)
+
+
+@gen_planner_router.get("/gen_planner/zones_reference", response_model=list[AvailableZoneSchema])
+async def get_available_zones_reference():
+    """
+    :return: available func zones with their kind and human-readable name, for callers
+        (chat agents in particular) that must map words like "жильё" to a zone id
+    """
+
+    return build_zones_reference()
 
 
 @gen_planner_router.post(
@@ -72,17 +82,19 @@ async def get_func_zone_ratio(
 
     return await genplanner_service.get_func_zone_ratio(zone)
 
+
 @gen_planner_router.get("/cut_polygons")
 async def get_cut_polygons(
-        params: Annotated[PolygonCutterDTO, Depends(PolygonCutterDTO)],
-        token: str = Depends(verify_bearer_token),
-        genplanner_service: GenPlannerService = Depends(get_genplanner_service),
-        config: Config = Depends(get_config)):
+    params: Annotated[PolygonCutterDTO, Depends(PolygonCutterDTO)],
+    token: str = Depends(verify_bearer_token),
+    genplanner_service: GenPlannerService = Depends(get_genplanner_service),
+    config: Config = Depends(get_config),
+):
     return await genplanner_service.cut_scenario_territory(params, config, token)
+
 
 @gen_planner_router.get("/default_matrix")
 async def get_default_matrix(
     genplanner_service: GenPlannerService = Depends(get_genplanner_service),
 ):
     return await genplanner_service.get_default_matrix()
-

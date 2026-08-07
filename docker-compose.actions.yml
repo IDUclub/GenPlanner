@@ -8,3 +8,17 @@ services:
       - .env.development
     restart: always
 
+  mcp:
+    image: ${IMAGE}
+    container_name: ${MCP_CONTAINER_NAME}
+    command: ["python", "-m", "app.mcp_server.main"]
+    ports:
+      - 8766:8766
+    env_file:
+      - .env.development
+    environment:
+      - GENPLANNER_API_BASE_URL=http://object_effects:80
+    depends_on:
+      - object_effects
+    restart: always
+

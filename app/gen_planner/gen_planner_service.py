@@ -147,9 +147,11 @@ class GenPlannerService:
         """Build relation_matrix argument for GenPlanner from request fields.
 
         Returns:
-            "default" if no custom relations were provided.
+            "default" if no custom relations and ignore_default_relations=False.
             "empty" if ignore_default_relations=True and no zones mapping available.
-            ZoneRelationMatrix instance otherwise.
+            ZoneRelationMatrix instance otherwise, seeded from FORBIDDEN_NEIGHBORHOOD unless
+            ignore_default_relations=True, in which case it starts empty (neutral) before
+            neighbour_pairs/forbidden_pairs are layered on top.
         """
 
         has_custom = bool(params.neighbour_pairs or params.forbidden_pairs or params.ignore_default_relations)
@@ -160,6 +162,9 @@ class GenPlannerService:
         zones = list(zone_map.values())
         if not zones:
             return "empty" if params.ignore_default_relations else "default"
+
+        if params.ignore_default_relations:
+            matrix = ZoneRelationMatrix.empty(zones)
         else:
             matrix = ZoneRelationMatrix.from_kind_forbidden(zones=zones, kind_forbidden=FORBIDDEN_NEIGHBORHOOD)
 
@@ -552,11 +557,6 @@ class GenPlannerService:
         """
         zones = zones.copy()
 
-        reverse_default_zone_map: dict[TerritoryZone, int] = {
-            zone: int(zone_id)
-            for zone_id, zone in default_terr_zones_map.items()
-        }
-
         kind_to_default_id: dict[TerritoryZoneKind, int] = {}
         for zone_id, zone in default_terr_zones_map.items():
             kind_to_default_id.setdefault(zone.kind, int(zone_id))
@@ -579,6 +579,14 @@ class GenPlannerService:
             def _resolve_territory_zone_id(row: pd.Series) -> int | None:
                 """
                 Resolve mapped territory zone id for output.
+
+                ``TerritoryZone.name`` is set to the requested zone id string in both
+                ``default_terr_zones_map`` and ``assign_custom_ter_zone_name``, so it's used
+                directly here rather than looking the object up by value-equality: genplanner's
+                ``TerritoryZone`` compares/hashes on every field including ``min_block_area``, so
+                a zone with a request-overridden ``min_block_area`` would otherwise fail to match
+                its ``default_terr_zones_map`` counterpart and silently collapse to the wrong id
+                for zone kinds with multiple ids (e.g. residential 10/11/12/13 -> 1).
                 """
                 functional_zone_type_id = row.get("functional_zone_type_id")
                 if pd.notna(functional_zone_type_id):
@@ -588,11 +596,10 @@ class GenPlannerService:
                 if territory_zone is None or pd.isna(territory_zone):
                     return None
 
-                exact_id = reverse_default_zone_map.get(territory_zone)
-                if exact_id is not None:
-                    return exact_id
-
-                return kind_to_default_id.get(territory_zone.kind)
+                try:
+                    return int(territory_zone.name)
+                except (TypeError, ValueError):
+                    return kind_to_default_id.get(territory_zone.kind)
 
             zones["territory_zone"] = zones.apply(_resolve_territory_zone_id, axis=1)
 
