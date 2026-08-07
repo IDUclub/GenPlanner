@@ -16,4 +16,5 @@ target
 
 # Claude Code planning/guidance docs -- kept locally, never pushed
 /CLAUDE.md
-/docs/
+/docs/*
+!/docs/frontend_integration_guide.md
