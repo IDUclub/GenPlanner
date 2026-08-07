@@ -1,24 +1,13 @@
 from functools import lru_cache
 from pathlib import Path
 
-from genplanner.zones import TerritoryZoneKind
 from loguru import logger
 
-from app.common.constants.api_constants import default_terr_zones_map
+from app.common.constants.api_constants import default_terr_zones_map, territory_zone_kind_names_ru
 
 from .draft import GenerationDraft
 
 _PROMPT_PATH = Path(__file__).parent / "data" / "chat_system_prompt.txt"
-
-_KIND_NAMES_RU: dict[TerritoryZoneKind, str] = {
-    TerritoryZoneKind.RESIDENTIAL: "жилая",
-    TerritoryZoneKind.INDUSTRIAL: "промышленная",
-    TerritoryZoneKind.BUSINESS: "деловая",
-    TerritoryZoneKind.RECREATION: "рекреационная",
-    TerritoryZoneKind.TRANSPORT: "транспортная",
-    TerritoryZoneKind.AGRICULTURE: "сельскохозяйственная",
-    TerritoryZoneKind.SPECIAL: "специального назначения",
-}
 
 
 @lru_cache(maxsize=1)
@@ -35,7 +24,7 @@ def _build_zones_table() -> str:
 
     lines = []
     for zone_id, zone in sorted(default_terr_zones_map.items(), key=lambda kv: int(kv[0])):
-        name = _KIND_NAMES_RU.get(zone.kind, zone.kind.value)
+        name = territory_zone_kind_names_ru.get(zone.kind, zone.kind.value)
         lines.append(f"{zone_id} — {name}")
     return "\n".join(lines)
 
