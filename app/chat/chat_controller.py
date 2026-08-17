@@ -8,7 +8,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.common.auth.bearer import verify_bearer_token
 from app.common.auth.user_identity import extract_user_id
 from app.common.exceptions.http_exception import http_exception
-from app.dependencies import get_chat_storage_client, get_config, get_genplanner_service, get_ollama_chat_client
+from app.dependencies import get_chat_storage_client, get_config, get_genplanner_service, get_llm_chat_client
 from app.gen_planner.gen_planner_service import GenPlannerService
 
 from .chat_service import stream_chat_turn
@@ -40,20 +40,20 @@ async def chat_stream(
     """
 
     genplanner_service: GenPlannerService = get_genplanner_service(request, params.test)
-    ollama_client = get_ollama_chat_client(request)
-    if ollama_client is None:
+    llm_client = get_llm_chat_client(request)
+    if llm_client is None:
         raise http_exception(
             503,
             "Chat feature is not configured",
             _input={"scenario_id": scenario_id},
-            _detail={"reason": "OLLAMA_BASE_URL/CHAT_MODEL is not set"},
+            _detail={"reason": "VLLM_BASE_URL/CHAT_MODEL is not set"},
         )
 
     chat_storage_client = get_chat_storage_client(request)
     user_id = extract_user_id(token)
 
     envelopes = stream_chat_turn(
-        ollama_client=ollama_client,
+        llm_client=llm_client,
         chat_storage_client=chat_storage_client,
         genplanner_service=genplanner_service,
         config=config,

@@ -9,7 +9,7 @@ from app.clients.urban_api_client import UrbanApiClient
 from app.common.api_handlers.json_api_handler import AsyncJsonApiHandler
 from app.common.auth.service_token import build_keycloak_token_client
 from app.common.chat_storage.chat_storage_client import build_chat_storage_client
-from app.common.llm.ollama_chat_client import build_ollama_chat_client
+from app.common.llm.factory import build_chat_client
 from app.common.logging.init_logger import init_logger
 from app.gen_planner.gen_planner_service import GenPlannerService
 from app.version import __version__ as version
@@ -46,13 +46,13 @@ async def init_dependencies(app: FastAPI):
     app.state.test_genplanner_service = GenPlannerService(test_urban_api_client, ecodonut_api_client)
 
     # chat feature dependencies -- all optional, left None (feature disabled) until
-    # OLLAMA_BASE_URL / CHAT_STORAGE_BASE_URL / KEYCLOAK_* are actually configured
-    app.state.ollama_chat_client = build_ollama_chat_client(app.state.config)
+    # VLLM_BASE_URL / CHAT_STORAGE_BASE_URL / KEYCLOAK_* are actually configured
+    app.state.llm_chat_client = build_chat_client(app.state.config)
     app.state.keycloak_token_client = build_keycloak_token_client(app.state.config)
     app.state.chat_storage_client = build_chat_storage_client(app.state.config, app.state.keycloak_token_client)
 
-    if app.state.ollama_chat_client is None:
-        logger.warning("OLLAMA_BASE_URL/CHAT_MODEL not configured -- chat feature disabled")
+    if app.state.llm_chat_client is None:
+        logger.warning("LLM base url/CHAT_MODEL not configured -- chat feature disabled")
     if app.state.chat_storage_client is None:
         logger.warning("ChatStorage/Keycloak not configured -- chat history persistence disabled")
 

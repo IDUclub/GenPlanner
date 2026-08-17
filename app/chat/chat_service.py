@@ -6,7 +6,7 @@ from loguru import logger
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
 from app.common.exceptions.http_exception import http_exception
-from app.common.llm.ollama_chat_client import OllamaChatClient, OllamaChatError
+from app.common.llm.chat_client import ChatClient, LLMChatError
 from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from app.gen_planner.gen_planner_service import GenPlannerService
 
@@ -96,7 +96,7 @@ async def _resolve_project_id(genplanner_service: GenPlannerService, scenario_id
 
 async def stream_chat_turn(
     *,
-    ollama_client: OllamaChatClient,
+    llm_client: ChatClient,
     chat_storage_client: ChatStorageClient | None,
     genplanner_service: GenPlannerService,
     config: Config,
@@ -171,8 +171,8 @@ async def stream_chat_turn(
     ]
 
     try:
-        decision = await ollama_client.complete_json(llm_messages, schema=AGENT_ACTION_SCHEMA)
-    except OllamaChatError as exc:
+        decision = await llm_client.complete_json(llm_messages, schema=AGENT_ACTION_SCHEMA)
+    except LLMChatError as exc:
         logger.warning(f"chat agent decision failed: {exc}")
         yield {"type": "error", "stage": "llm", "detail": str(exc)}
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
