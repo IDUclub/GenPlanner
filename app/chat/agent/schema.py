@@ -1,7 +1,8 @@
 """
-JSON Schema passed as Ollama's `format` field for the chat agent's one-call-per-turn
-decision step (OllamaChatClient.complete_json). A single call returns both the action
-to execute and the ready-to-stream reply text -- no second "reply" call.
+JSON Schema constraining the chat agent's one-call-per-turn decision step
+(ChatClient.complete_json -- vLLM's `response_format.json_schema`, Ollama's `format`).
+A single call returns both the action to execute and the ready-to-stream reply text --
+no second "reply" call.
 """
 
 AGENT_ACTION_SCHEMA: dict = {

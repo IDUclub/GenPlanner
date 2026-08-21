@@ -6,34 +6,11 @@ from iduconfig import Config
 from loguru import logger
 
 from app.common.config_utils import get_optional_config
+from app.common.llm.chat_client import LLMChatError, loads_json_object
 
 
-class OllamaChatError(Exception):
+class OllamaChatError(LLMChatError):
     """Raised when Ollama's /api/chat returns a non-2xx response or a malformed stream."""
-
-
-def _loads_json_object(text: str) -> dict[str, Any]:
-    """
-    Parse a JSON object out of model output, tolerating formatting artifacts -- some
-    models wrap structured output in chain-of-thought text or code fences even when a
-    schema was requested. Tries a strict parse first, then falls back to the outermost
-    `{...}` span.
-    """
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise OllamaChatError(f"Model output is not a JSON object: {text[:500]!r}")
-
-    try:
-        return json.loads(text[start : end + 1])
-    except json.JSONDecodeError as exc:
-        raise OllamaChatError(f"Model output is not a JSON object: {text[:500]!r}") from exc
 
 
 class OllamaChatClient:
@@ -172,14 +149,14 @@ class OllamaChatClient:
         if not content:
             raise OllamaChatError(f"Ollama returned no message content: {data!r}")
 
-        return _loads_json_object(content)
+        return loads_json_object(content)
 
 
 def build_ollama_chat_client(config: Config) -> "OllamaChatClient | None":
     """
-    Build the Ollama chat client used by the GenPlanner chat agent. Returns None if
-    OLLAMA_BASE_URL isn't configured, so the chat feature can be left disabled by
-    simply leaving it empty.
+    Build the Ollama chat client, kept as an alternative backend selected by
+    LLM_PROVIDER=ollama. Returns None if OLLAMA_BASE_URL isn't configured, so the chat
+    feature can be left disabled by simply leaving it empty.
     """
 
     base_url = get_optional_config(config, "OLLAMA_BASE_URL")
