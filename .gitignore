@@ -13,7 +13,7 @@ target
 *.env.*
 *.log
 *.ipynb
-/config_overrides.json
+/runtime_data/
 
 # Claude Code planning/guidance docs -- kept locally, never pushed
 /CLAUDE.md

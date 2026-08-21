@@ -101,8 +101,8 @@ jobs:
     steps:
       - name: set env
         run: echo "IMAGE=$IMAGE_NAME:$NOW" >> $GITHUB_ENV
-      - name: ensure_config_overrides_file
-        run: test -f config_overrides.json || echo '{}' > config_overrides.json
+      - name: ensure_runtime_data_dir
+        run: mkdir -p runtime_data
       - name: run
         run: docker compose -f docker-compose.actions.yml up -d
       - name: verify_containers_running

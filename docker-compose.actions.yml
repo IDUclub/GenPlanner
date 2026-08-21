@@ -7,7 +7,7 @@ services:
     env_file:
       - .env.development
     volumes:
-      - ./config_overrides.json:/app/config_overrides.json
+      - ./runtime_data:/app/runtime_data
     restart: always
 
   mcp:

@@ -3,7 +3,10 @@
 ``iduconfig.Config.get``/``Config.set`` are thin ``os.environ`` wrappers, so applying
 an override only means writing into ``os.environ`` -- every ``config.get(key)`` call
 anywhere in the app sees it immediately. Overrides are additionally persisted to
-``config_overrides.json`` so they survive a container restart.
+``runtime_data/config_overrides.json`` so they survive a container restart. The file
+lives inside a directory bind mount rather than being mounted directly, because the
+atomic tmp-file-then-rename write pattern below fails with ``EBUSY`` when the target
+path is itself a Docker file bind-mount point.
 
 Safety:
 - credentials are never overridable (``_DENY``);
@@ -25,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_OVERRIDES_FILE = Path("config_overrides.json")
+_OVERRIDES_FILE = Path("runtime_data/config_overrides.json")
 
 _DENY: frozenset[str] = frozenset({"ADMIN_API_TOKEN", "KEYCLOAK_CLIENT_SECRET"})
 
@@ -48,6 +51,7 @@ def _read_store() -> dict[str, dict[str, Any]]:
 
 
 def _write_store(data: dict[str, dict[str, Any]]) -> None:
+    _OVERRIDES_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = _OVERRIDES_FILE.with_suffix(".json.tmp")
     with tmp_path.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
