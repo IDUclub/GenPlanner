@@ -8,6 +8,8 @@ services:
       dockerfile: ./Dockerfile
     ports:
       - 80:80
+    volumes:
+      - ./config_overrides.json:/app/config_overrides.json
 
   mcp:
     image: gen_planner:0.3.2s

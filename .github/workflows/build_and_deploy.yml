@@ -18,8 +18,55 @@ jobs:
         uses: actions/checkout@v4
       - name: copy_env
         env:
-          ENV_PATH: ${{secrets.ENV_PATH}}
-        run: cp "$ENV_PATH"/.env.development ./
+          LOG_FILE: ${{vars.LOG_FILE}}
+          LOG_LEVEL: ${{vars.LOG_LEVEL}}
+          URBAN_API: ${{vars.URBAN_API}}
+          TEST_URBAN_API: ${{vars.TEST_URBAN_API}}
+          ECODONUT_API: ${{vars.ECODONUT_API}}
+          MAX_API_ASYNC_EXTRACTIONS: ${{vars.MAX_API_ASYNC_EXTRACTIONS}}
+          MAX_TIMEOUT: ${{vars.MAX_TIMEOUT}}
+          GENPLANNER_API_BASE_URL: ${{vars.GENPLANNER_API_BASE_URL}}
+          MCP_SERVER_PORT: ${{vars.MCP_SERVER_PORT}}
+          MCP_UPSTREAM_TIMEOUT_SECONDS: ${{vars.MCP_UPSTREAM_TIMEOUT_SECONDS}}
+          OLLAMA_BASE_URL: ${{vars.OLLAMA_BASE_URL}}
+          CHAT_STORAGE_BASE_URL: ${{vars.CHAT_STORAGE_BASE_URL}}
+          CHAT_STORAGE_TIMEOUT_SECONDS: ${{vars.CHAT_STORAGE_TIMEOUT_SECONDS}}
+          KEYCLOAK_URL: ${{vars.KEYCLOAK_URL}}
+          KEYCLOAK_REALM: ${{vars.KEYCLOAK_REALM}}
+          KEYCLOAK_CLIENT_ID: ${{vars.KEYCLOAK_CLIENT_ID}}
+          KEYCLOAK_CLIENT_SECRET: ${{secrets.KEYCLOAK_CLIENT_SECRET}}
+          KEYCLOAK_SCOPE: ${{vars.KEYCLOAK_SCOPE}}
+          LLM_PROVIDER: ${{vars.LLM_PROVIDER}}
+          VLLM_BASE_URL: ${{vars.VLLM_BASE_URL}}
+          CHAT_MODEL: ${{vars.CHAT_MODEL}}
+          GENERATE_MODEL: ${{vars.GENERATE_MODEL}}
+          ADMIN_API_TOKEN: ${{secrets.ADMIN_API_TOKEN}}
+        run: |
+          cat > .env.development <<EOF
+          LOG_FILE="$LOG_FILE"
+          URBAN_API="$URBAN_API"
+          TEST_URBAN_API="$TEST_URBAN_API"
+          ECODONUT_API="$ECODONUT_API"
+          MAX_API_ASYNC_EXTRACTIONS="$MAX_API_ASYNC_EXTRACTIONS"
+          MAX_TIMEOUT=$MAX_TIMEOUT
+          LOG_LEVEL="$LOG_LEVEL"
+          GENPLANNER_API_BASE_URL="$GENPLANNER_API_BASE_URL"
+          MCP_SERVER_PORT="$MCP_SERVER_PORT"
+          MCP_UPSTREAM_TIMEOUT_SECONDS="$MCP_UPSTREAM_TIMEOUT_SECONDS"
+          OLLAMA_BASE_URL="$OLLAMA_BASE_URL"
+          CHAT_STORAGE_BASE_URL=$CHAT_STORAGE_BASE_URL
+          CHAT_STORAGE_TIMEOUT_SECONDS=$CHAT_STORAGE_TIMEOUT_SECONDS
+          KEYCLOAK_URL="$KEYCLOAK_URL"
+          KEYCLOAK_REALM="$KEYCLOAK_REALM"
+          KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID"
+          KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
+          KEYCLOAK_SCOPE="$KEYCLOAK_SCOPE"
+          LLM_PROVIDER="$LLM_PROVIDER"
+          VLLM_BASE_URL="$VLLM_BASE_URL"
+          CHAT_MODEL="$CHAT_MODEL"
+          GENERATE_MODEL="$GENERATE_MODEL"
+          ADMIN_API_TOKEN="$ADMIN_API_TOKEN"
+          EOF
       - name: build
         env:
           NOW: ${{steps.date.outputs.now}}
