@@ -95,3 +95,9 @@ jobs:
         run: test -f config_overrides.json || echo '{}' > config_overrides.json
       - name: run
         run: docker compose -f docker-compose.actions.yml up -d
+      - name: verify_containers_running
+        run: |
+          sleep 5
+          docker ps --filter "name=$CONTAINER_NAME" --filter "name=$MCP_CONTAINER_NAME"
+          docker inspect --format='{{.Name}}: {{.State.Status}} (restarts: {{.RestartCount}})' "$CONTAINER_NAME" "$MCP_CONTAINER_NAME"
+          docker logs --tail 50 "$CONTAINER_NAME"
