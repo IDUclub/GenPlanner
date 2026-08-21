@@ -1,5 +1,12 @@
 name: build_and_deploy
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "deploy = full build+redeploy; diag_only = just tail container logs, no changes"
+        type: choice
+        options: [deploy, diag_only]
+        default: deploy
 env:
   IMAGE_NAME: ${{secrets.REGISTRY}}/genplanner_api
   CONTAINER_NAME: genplanner_api
@@ -7,6 +14,7 @@ env:
 
 jobs:
   build:
+    if: github.event.inputs.mode != 'diag_only'
     runs-on: 102_runner
     outputs:
       now: ${{steps.date.outputs.NOW}}
@@ -76,6 +84,7 @@ jobs:
           NOW: ${{steps.date.outputs.now}}
         run: docker push "$IMAGE_NAME":"$NOW"
   stop_container:
+    if: github.event.inputs.mode != 'diag_only'
     runs-on: 102_runner
     needs: build
     steps:
@@ -84,6 +93,7 @@ jobs:
           docker rm -f "$CONTAINER_NAME" || true
           docker rm -f "$MCP_CONTAINER_NAME" || true
   run_container:
+    if: github.event.inputs.mode != 'diag_only'
     runs-on: 102_runner
     needs: [build, stop_container]
     env:
@@ -101,3 +111,9 @@ jobs:
           docker ps --filter "name=$CONTAINER_NAME" --filter "name=$MCP_CONTAINER_NAME"
           docker inspect --format='{{.Name}}: {{.State.Status}} (restarts: {{.RestartCount}})' "$CONTAINER_NAME" "$MCP_CONTAINER_NAME"
           docker logs --tail 50 "$CONTAINER_NAME"
+  diag_logs:
+    if: github.event.inputs.mode == 'diag_only'
+    runs-on: 102_runner
+    steps:
+      - name: tail_container_logs
+        run: docker logs --tail 200 "$CONTAINER_NAME"
