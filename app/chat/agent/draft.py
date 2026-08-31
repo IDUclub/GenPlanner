@@ -2,6 +2,10 @@ from typing import Any, Self
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.common.constants.api_constants import territory_zone_name_by_id
+
+from .zone_refs import resolve_zone_pairs, resolve_zone_ratio_map
+
 
 class GenerationDraft(BaseModel):
     """
@@ -36,16 +40,67 @@ class GenerationDraft(BaseModel):
         Merge a partial update (as decided by the chat agent) into a new draft. Only
         known fields are applied; a patch value of None leaves the existing draft value
         untouched (the agent omits fields it isn't changing rather than clearing them).
+
+        Zone references arrive as names («жилая»), which is what the agent and the user
+        talk in, and are resolved to ids here -- the draft itself stays id-keyed so the
+        DTO it feeds and drafts already stored in chat history keep the same shape.
         """
+
+        normalized = _resolve_zone_references(patch)
 
         data = self.model_dump()
         for key in data:
-            value = patch.get(key)
+            value = normalized.get(key)
             if value is not None:
                 data[key] = value
         return GenerationDraft.model_validate(data)
+
+    def as_named_dict(self) -> dict[str, Any]:
+        """
+        The draft with zone ids rendered back as names, for showing it in the system
+        prompt. The prompt tells the model to speak names only -- handing it a draft full
+        of ids would contradict that and invite it to echo ids back at the user.
+        """
+
+        def name(zone_id: int) -> str:
+            return territory_zone_name_by_id(zone_id) or str(zone_id)
+
+        data: dict[str, Any] = {}
+        if self.territory_balance:
+            data["territory_balance"] = {name(zone_id): ratio for zone_id, ratio in self.territory_balance.items()}
+        if self.min_block_area:
+            data["min_block_area"] = {name(zone_id): area for zone_id, area in self.min_block_area.items()}
+        for field, pairs in (
+            ("neighbour_pairs", self.neighbour_pairs or []),
+            ("forbidden_pairs", self.forbidden_pairs or []),
+        ):
+            if pairs:
+                data[field] = [[name(left), name(right)] for left, right in pairs]
+        if self.elevation_angle is not None:
+            data["elevation_angle"] = self.elevation_angle
+        if self.roads_extend_distance is not None:
+            data["roads_extend_distance"] = self.roads_extend_distance
+        return data
 
     def is_ready_for_generation(self) -> bool:
         """territory_balance is the only field GenPlannerFuncZonesDTO requires."""
 
         return bool(self.territory_balance)
+
+
+def _resolve_zone_references(patch: dict[str, Any]) -> dict[str, Any]:
+    """
+    Return a copy of the agent's patch with every zone-keyed field turned into zone ids.
+
+    Fields that resolve to nothing are left out entirely (not set to an empty value), so
+    a hallucinated zone name never wipes a balance the user already agreed on.
+    """
+
+    normalized = dict(patch)
+    for field in ("territory_balance", "min_block_area"):
+        if field in normalized:
+            normalized[field] = resolve_zone_ratio_map(normalized[field])
+    for field in ("neighbour_pairs", "forbidden_pairs"):
+        if field in normalized:
+            normalized[field] = resolve_zone_pairs(normalized[field])
+    return normalized

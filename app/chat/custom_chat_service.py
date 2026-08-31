@@ -181,7 +181,9 @@ async def stream_custom_chat_turn(
 
     if action == "run_generation":
         if not draft.is_ready_for_generation():
-            reply = reply or "Нужен выбранный профиль зонирования, прежде чем запускать генерацию — какой хочешь?"
+            # Same as in the scenario chat: never let the model's optimistic "запускаю"
+            # stand when the profile it named could not be resolved and nothing ran.
+            reply = "Нужен выбранный профиль зонирования, прежде чем запускать генерацию — какой хочешь?"
         else:
             assert draft.profile_id is not None
             try:
@@ -192,7 +194,10 @@ async def stream_custom_chat_turn(
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"custom chat-triggered generation failed: {detail}")
                 yield {"type": "warning", "stage": "run_generation", "detail": detail}
-                reply = reply or (
+                # The model already wrote a reply announcing the generation; keeping it
+                # would tell the user it succeeded while the error event says otherwise,
+                # so the failure text replaces it outright.
+                reply = (
                     "Генерация не запустилась: "
                     f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
                 )
@@ -207,7 +212,10 @@ async def stream_custom_chat_turn(
                     "stage": "run_generation",
                     "detail": f"{type(exc).__name__}: {exc}",
                 }
-                reply = reply or (
+                # The model already wrote a reply announcing the generation; keeping it
+                # would tell the user it succeeded while the error event says otherwise,
+                # so the failure text replaces it outright.
+                reply = (
                     "Генерация завершилась ошибкой на стороне сервиса. "
                     "Попробуй ещё раз или пришли другую границу территории."
                 )

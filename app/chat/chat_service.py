@@ -155,9 +155,11 @@ async def stream_chat_turn(
 
     if action == "run_generation":
         if not draft.is_ready_for_generation():
-            reply = (
-                reply or "Нужен хотя бы примерный баланс зон, прежде чем запускать генерацию — какие пропорции хочешь?"
-            )
+            # The model's own reply announces a generation that is not going to happen
+            # (it asked to run with no usable balance -- e.g. every zone it named was
+            # unresolvable), so it is replaced rather than kept: telling the user
+            # "запускаю" while nothing runs is worse than asking again.
+            reply = "Нужен хотя бы примерный баланс зон, прежде чем запускать генерацию — какие пропорции хочешь?"
         else:
             try:
                 project_id = await _resolve_project_id(genplanner_service, scenario_id, token)
@@ -178,7 +180,10 @@ async def stream_chat_turn(
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"chat-triggered generation failed: {detail}")
                 yield {"type": "warning", "stage": "run_generation", "detail": detail}
-                reply = reply or (
+                # The model already wrote a reply announcing the generation; keeping it
+                # would tell the user it succeeded while the error event says otherwise,
+                # so the failure text replaces it outright.
+                reply = (
                     "Генерация не запустилась: "
                     f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
                 )
@@ -193,9 +198,10 @@ async def stream_chat_turn(
                     "stage": "run_generation",
                     "detail": f"{type(exc).__name__}: {exc}",
                 }
-                reply = reply or (
-                    "Генерация завершилась ошибкой на стороне сервиса. Попробуй ещё раз или измени параметры."
-                )
+                # The model already wrote a reply announcing the generation; keeping it
+                # would tell the user it succeeded while the error event says otherwise,
+                # so the failure text replaces it outright.
+                reply = "Генерация завершилась ошибкой на стороне сервиса. Попробуй ещё раз или измени параметры."
 
     for piece in chunk_reply(reply):
         yield {"type": "token", "content": piece}
