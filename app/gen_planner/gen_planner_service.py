@@ -22,6 +22,8 @@ from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from .schema.gen_planner_schema import GenPlannerResultSchema
 from ..common.exceptions.http_exception import http_exception
 
+_UNSET = object()
+
 ROADS_OBJECTS_IDS = [50, 51, 52]
 WATER_OBJECTS_IDS = [2, 44, 45, 54, 55]
 
@@ -649,13 +651,17 @@ class GenPlannerService:
     async def _run_features_generation_with_retries(
             genplanner: GenPlanner,
             funczone,
-            relation_matrix,
-            terr_zones_fix_points,
+            relation_matrix=_UNSET,
+            terr_zones_fix_points=_UNSET,
             attempts: int = 3,
             delay_seconds: float = 0.5,
     ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
         """
         Run GenPlanner generation with retries for intermittent library failures.
+
+        relation_matrix/terr_zones_fix_points are left out of the call entirely when not
+        passed, so the custom path (which has neither and relies on the library's own
+        defaults) keeps exactly the call it made before it went through this helper.
         """
         last_exception: Exception | None = None
 
@@ -665,18 +671,23 @@ class GenPlannerService:
                     f"Running GenPlanner generation attempt {attempt}/{attempts}"
                 )
 
-                fix_points_prepared = None
-                if terr_zones_fix_points is not None and not terr_zones_fix_points.empty:
-                    fix_points_prepared = terr_zones_fix_points.copy()
-                    target_crs = genplanner.territory_to_work_with.crs
-                    if fix_points_prepared.crs != target_crs:
-                        fix_points_prepared = fix_points_prepared.to_crs(target_crs)
+                generation_kwargs = {"funczone": funczone}
+
+                if relation_matrix is not _UNSET:
+                    generation_kwargs["relation_matrix"] = relation_matrix
+
+                if terr_zones_fix_points is not _UNSET:
+                    fix_points_prepared = None
+                    if terr_zones_fix_points is not None and not terr_zones_fix_points.empty:
+                        fix_points_prepared = terr_zones_fix_points.copy()
+                        target_crs = genplanner.territory_to_work_with.crs
+                        if fix_points_prepared.crs != target_crs:
+                            fix_points_prepared = fix_points_prepared.to_crs(target_crs)
+                    generation_kwargs["terr_zones_fix_points"] = fix_points_prepared
 
                 zones, roads = await asyncio.to_thread(
                     genplanner.features2terr_zones2blocks,
-                    funczone=funczone,
-                    relation_matrix=relation_matrix,
-                    terr_zones_fix_points=fix_points_prepared,
+                    **generation_kwargs,
                 )
                 logger.info(
                     f"GenPlanner generation attempt {attempt}/{attempts} succeeded"
@@ -789,9 +800,11 @@ class GenPlannerService:
 
         await self.log_request_params(params, True)
         genplanner = await self.form_custom_genplanner(params)
-        zones, roads = await asyncio.to_thread(
-            genplanner.features2terr_zones2blocks,
+        zones, roads = await self._run_features_generation_with_retries(
+            genplanner=genplanner,
             funczone=params._func_zone,
+            attempts=3,
+            delay_seconds=0.5,
         )
         res = await self.form_genplanner_response(zones, roads)
         return GenPlannerResultSchema(**res)

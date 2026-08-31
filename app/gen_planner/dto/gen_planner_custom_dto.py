@@ -24,7 +24,7 @@ class GenPlannerCustomDTO(BaseModel):
     _func_zone: FunctionalZone | None = None
 
     # request params
-    profile_id: int = Field(ge=1, le=13, examples=[1], description="Profile ID to generate functional zones")
+    profile_id: int = Field(examples=[1], description="Profile ID to generate functional zones")
     territory: PolygonalFeatureCollection = Field(description="Territory to generate functional zones")
 
     @model_validator(mode="after")
@@ -32,6 +32,9 @@ class GenPlannerCustomDTO(BaseModel):
         """
         Function validator for the territory field and casts it to GeoDataFrame.
         """
+
+        if self.profile_id not in scenario_func_zones_map:
+            raise ValueError(f"Unknown profile_id {self.profile_id}, available: {sorted(scenario_func_zones_map)}")
 
         self._territory_gdf = self.territory.as_gdf(4326)
         self._func_zone = scenario_func_zones_map[self.profile_id]
