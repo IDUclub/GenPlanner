@@ -3,6 +3,7 @@ from typing import Any, AsyncIterator
 
 from fastapi import HTTPException
 from loguru import logger
+from pydantic import ValidationError
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
@@ -163,7 +164,18 @@ async def stream_custom_chat_turn(
     patch = decision.get("patch") or {}
 
     if patch:
-        draft = draft.merge_patch(patch)
+        try:
+            draft = draft.merge_patch(patch)
+        except ValidationError as exc:
+            logger.warning(f"custom chat agent produced an invalid draft patch {patch}: {exc}")
+            yield {
+                "type": "warning",
+                "stage": "update_draft",
+                "detail": str(exc),
+                "message": "Не удалось применить выбранные параметры — уточни профиль зонирования.",
+            }
+            action = "ask_clarifying_question"
+            reply = reply or "Не понял выбранный профиль зонирования. Назови его ещё раз, пожалуйста."
 
     result_payload: dict[str, Any] | None = None
 
@@ -185,6 +197,21 @@ async def stream_custom_chat_turn(
                 reply = reply or (
                     "Генерация не запустилась: "
                     f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
+                )
+            except Exception as exc:  # pylint: disable=broad-except
+                # Anything the genplanner core (or DTO validation) throws that isn't an
+                # HTTPException used to escape this generator, which kills the SSE stream
+                # mid-flight: the browser then reports a bare network/CORS failure with no
+                # status instead of an error the user can see.
+                logger.exception(f"custom chat-triggered generation crashed: {exc}")
+                yield {
+                    "type": "error",
+                    "stage": "run_generation",
+                    "detail": f"{type(exc).__name__}: {exc}",
+                }
+                reply = reply or (
+                    "Генерация завершилась ошибкой на стороне сервиса. "
+                    "Попробуй ещё раз или пришли другую границу территории."
                 )
 
     for piece in chunk_reply(reply):

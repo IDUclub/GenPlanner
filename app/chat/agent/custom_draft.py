@@ -1,9 +1,9 @@
 from typing import Any
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.common.constants.api_constants import profile_name_by_id, resolve_profile_id
+from app.common.constants.api_constants import profile_name_by_id, resolve_profile_id, scenario_func_zones_map
 
 
 class CustomGenerationDraft(BaseModel):
@@ -20,7 +20,20 @@ class CustomGenerationDraft(BaseModel):
     GenerationDraft.
     """
 
-    profile_id: int | None = Field(default=None, ge=1, le=13)
+    profile_id: int | None = Field(default=None)
+
+    @field_validator("profile_id")
+    @classmethod
+    def validate_profile_id(cls, value: int | None) -> int | None:
+        """
+        Accept only ids that actually exist in scenario_func_zones_map -- the range
+        1..13 is not contiguous (there is no profile 9), so a range check alone lets an
+        id through that later blows up with a KeyError inside GenPlannerCustomDTO.
+        """
+
+        if value is not None and value not in scenario_func_zones_map:
+            raise ValueError(f"Unknown profile_id {value}, available: {sorted(scenario_func_zones_map)}")
+        return value
 
     def merge_patch(self, patch: dict[str, Any]) -> "CustomGenerationDraft":
         """
