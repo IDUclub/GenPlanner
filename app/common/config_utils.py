@@ -1,7 +1,7 @@
 from iduconfig import Config
 
 
-def get_optional_config(config: Config, key: str) -> str | None:
+def get_optional_config(config: Config, key: str, default: str | None = None) -> str | None:
     """
     Read an env var that's allowed to be absent, unlike Config.get() which raises
     ValueError for a missing/empty key. Used for integrations that are optional by
@@ -12,5 +12,5 @@ def get_optional_config(config: Config, key: str) -> str | None:
     try:
         value = config.get(key)
     except ValueError:
-        return None
-    return value or None
+        return default
+    return value or default

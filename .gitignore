@@ -13,6 +13,7 @@ target
 *.env.*
 *.log
 *.ipynb
+/runtime_data/
 
 # Claude Code planning/guidance docs -- kept locally, never pushed
 /CLAUDE.md

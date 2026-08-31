@@ -9,6 +9,7 @@ from app.chat.custom_chat_controller import custom_chat_router
 from app.common.exceptions.exception_handler import ExceptionHandlerMiddleware
 from app.gen_planner.gen_planner_controller import gen_planner_router
 from app.init_dependencies import init_dependencies
+from app.system.admin_config_router import router as admin_config_router
 from app.system.logs_router import logs_router
 from app.version import __version__ as version
 
@@ -44,3 +45,4 @@ app.include_router(logs_router, prefix="/genplanner")
 app.include_router(gen_planner_router, prefix="/genplanner")
 app.include_router(chat_router, prefix="/genplanner")
 app.include_router(custom_chat_router, prefix="/genplanner")
+app.include_router(admin_config_router)
