@@ -152,3 +152,26 @@ async def test_reuploaded_territory_replaces_the_original_for_later_turns():
     assert len(genplanner_service.calls) == 1
     used_territory = genplanner_service.calls[0].territory
     assert _territory_to_geojson_dict(used_territory) == _territory_to_geojson_dict(_TERRITORY_B)
+
+
+@pytest.mark.asyncio
+async def test_agent_picks_the_profile_by_name_and_generation_gets_its_id():
+    """The agent answers in zone names now; the id only appears when the DTO is built."""
+
+    storage = FakeChatStorageClient()
+    genplanner_service = FakeGenPlannerService()
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile": "жилая"}, "reply": "запускаю"}])
+
+    await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=storage,
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="жилую застройку, запускай", chat_id=None),
+        )
+    )
+
+    assert len(genplanner_service.calls) == 1
+    assert genplanner_service.calls[0].profile_id == 1

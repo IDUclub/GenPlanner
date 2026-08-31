@@ -1,9 +1,10 @@
+import json
 from functools import lru_cache
 from pathlib import Path
 
 from loguru import logger
 
-from app.common.constants.api_constants import build_zones_reference
+from app.common.constants.api_constants import profile_names
 
 from .custom_draft import CustomGenerationDraft
 
@@ -20,10 +21,14 @@ def _load_prompt_template() -> str:
 
 
 def _build_zones_table() -> str:
-    """List every generatable zoning profile id with a human-readable (Russian) name."""
+    """
+    List the zoning profile names the chat may use.
 
-    lines = [f"{entry['id']} — {entry['name']}" for entry in build_zones_reference()]
-    return "\n".join(lines)
+    Names, not ids: CustomGenerationDraft resolves the chosen name back to the profile id
+    GenPlannerCustomDTO needs.
+    """
+
+    return "\n".join(f"- {name}" for name in profile_names())
 
 
 def build_custom_system_prompt(draft: CustomGenerationDraft) -> str:
@@ -34,5 +39,5 @@ def build_custom_system_prompt(draft: CustomGenerationDraft) -> str:
 
     template = _load_prompt_template()
     return template.replace("{zones_table}", _build_zones_table()).replace(
-        "{draft_json}", draft.model_dump_json(exclude_none=True)
+        "{draft_json}", json.dumps(draft.as_named_dict(), ensure_ascii=False)
     )

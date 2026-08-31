@@ -3,7 +3,19 @@ JSON Schema constraining the chat agent's one-call-per-turn decision step
 (ChatClient.complete_json -- vLLM's `response_format.json_schema`, Ollama's `format`).
 A single call returns both the action to execute and the ready-to-stream reply text --
 no second "reply" call.
+
+Zones are referred to by name, not by id: the enums below are the exact vocabulary the
+model may answer with, so constrained decoding cannot invent a zone that does not exist.
+GenerationDraft maps the names back to ids on merge.
 """
+
+from app.common.constants.api_constants import territory_zone_names
+
+_ZONE_NAME_SCHEMA: dict = {
+    "type": "string",
+    "enum": territory_zone_names(),
+    "description": "Territorial zone name, spelled exactly as in the enum -- never an id.",
+}
 
 AGENT_ACTION_SCHEMA: dict = {
     "type": "object",
@@ -17,7 +29,7 @@ AGENT_ACTION_SCHEMA: dict = {
                 "run_generation: user confirmed (or gave a complete balance and asked to run immediately) "
                 "and territory_balance will be set (from patch this turn and/or an earlier turn) -- start "
                 "generation now. "
-                "list_zones: user asked what zones/ids are available. "
+                "list_zones: user asked what zones are available. "
                 "chat: anything else (greeting, off-topic, explanation)."
             ),
         },
@@ -32,20 +44,28 @@ AGENT_ACTION_SCHEMA: dict = {
                 "territory_balance": {
                     "type": "object",
                     "additionalProperties": {"type": "number", "exclusiveMinimum": 0},
-                    "description": "Territorial zone id (as string key) -> target ratio.",
+                    "description": (
+                        'Territorial zone name (as key, e.g. "жилая") -> target ratio. Use only the names listed '
+                        "in the system prompt."
+                    ),
                 },
                 "neighbour_pairs": {
                     "type": "array",
-                    "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                    "items": {"type": "array", "items": _ZONE_NAME_SCHEMA, "minItems": 2, "maxItems": 2},
+                    "description": "Pairs of zone names that should be neighbours.",
                 },
                 "forbidden_pairs": {
                     "type": "array",
-                    "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                    "items": {"type": "array", "items": _ZONE_NAME_SCHEMA, "minItems": 2, "maxItems": 2},
+                    "description": "Pairs of zone names that must not be neighbours.",
                 },
                 "min_block_area": {
                     "type": "object",
                     "additionalProperties": {"type": "number", "exclusiveMinimum": 0},
-                    "description": "Territorial zone id (as string key) -> minimum block area in m^2.",
+                    "description": (
+                        "Territorial zone name (as key) -> minimum block area in m^2. Use only the names "
+                        "listed in the system prompt."
+                    ),
                 },
                 "elevation_angle": {"type": "integer", "minimum": 0, "maximum": 90},
                 "roads_extend_distance": {"type": "number", "exclusiveMinimum": 0},

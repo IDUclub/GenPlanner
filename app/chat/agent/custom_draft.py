@@ -1,6 +1,9 @@
 from typing import Any
 
+from loguru import logger
 from pydantic import BaseModel, Field
+
+from app.common.constants.api_constants import profile_name_by_id, resolve_profile_id
 
 
 class CustomGenerationDraft(BaseModel):
@@ -23,14 +26,36 @@ class CustomGenerationDraft(BaseModel):
         """
         Merge a partial update (as decided by the chat agent) into a new draft. A patch
         value of None leaves the existing draft value untouched.
+
+        The agent names the profile («жилая») rather than numbering it, so `profile` is
+        the field it fills; `profile_id` is still accepted for drafts restored from chat
+        history and for models that fall back to an id. An unknown profile is dropped,
+        leaving the previous choice intact instead of storing an id generation would
+        reject.
         """
 
+        requested = patch.get("profile")
+        if requested is None:
+            requested = patch.get("profile_id")
+
         data = self.model_dump()
-        for key in data:
-            value = patch.get(key)
-            if value is not None:
-                data[key] = value
+        if requested is not None:
+            profile_id = resolve_profile_id(requested)
+            if profile_id is None:
+                logger.warning(f"custom chat agent picked an unknown profile {requested!r}, keeping the previous one")
+            else:
+                data["profile_id"] = profile_id
         return CustomGenerationDraft.model_validate(data)
+
+    def as_named_dict(self) -> dict[str, Any]:
+        """
+        The draft with the profile id rendered back as its name, for showing it in the
+        system prompt -- which tells the model to speak profile names only.
+        """
+
+        if self.profile_id is None:
+            return {}
+        return {"profile": profile_name_by_id(self.profile_id) or str(self.profile_id)}
 
     def is_ready_for_generation(self) -> bool:
         return self.profile_id is not None
