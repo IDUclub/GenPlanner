@@ -149,7 +149,9 @@ async def stream_chat_turn(
                 "message": "Не удалось применить выбранные параметры — уточни, что нужно поменять.",
             }
             action = "ask_clarifying_question"
-            reply = reply or "Не понял параметры генерации. Опиши их ещё раз, пожалуйста."
+            # Same reason as the failure branches below: the patch was rejected, so the
+            # model's own reply describes parameters that were never applied.
+            reply = "Не понял параметры генерации. Опиши их ещё раз, пожалуйста."
 
     result_payload: dict[str, Any] | None = None
 
@@ -180,7 +182,10 @@ async def stream_chat_turn(
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"chat-triggered generation failed: {detail}")
                 yield {"type": "warning", "stage": "run_generation", "detail": detail}
-                reply = reply or (
+                # The model already wrote a reply announcing the generation; keeping it
+                # would tell the user it succeeded while the error event says otherwise,
+                # so the failure text replaces it outright.
+                reply = (
                     "Генерация не запустилась: "
                     f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
                 )
@@ -195,9 +200,10 @@ async def stream_chat_turn(
                     "stage": "run_generation",
                     "detail": f"{type(exc).__name__}: {exc}",
                 }
-                reply = reply or (
-                    "Генерация завершилась ошибкой на стороне сервиса. Попробуй ещё раз или измени параметры."
-                )
+                # The model already wrote a reply announcing the generation; keeping it
+                # would tell the user it succeeded while the error event says otherwise,
+                # so the failure text replaces it outright.
+                reply = "Генерация завершилась ошибкой на стороне сервиса. Попробуй ещё раз или измени параметры."
 
     for piece in chunk_reply(reply):
         yield {"type": "token", "content": piece}

@@ -1,6 +1,7 @@
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 
 from app.chat.custom_chat_service import (
     _extract_territory_from_history,
@@ -201,3 +202,48 @@ async def test_unresolvable_profile_does_not_leave_the_user_thinking_generation_
     assert not any(e["type"] == "result" for e in events)
     assert "запускаю" not in reply
     assert "профиль" in reply
+
+
+class FailingGenPlannerService:
+    """GenPlannerService stand-in whose generation always fails the given way."""
+
+    def __init__(self, error):
+        self._error = error
+        self.calls: list[Any] = []
+
+    async def run_custom_func_generation(self, params):
+        self.calls.append(params)
+        raise self._error
+
+
+@pytest.mark.parametrize(
+    "error, expected_event",
+    [
+        (HTTPException(status_code=400, detail={"msg": "территория пустая"}), "warning"),
+        (RuntimeError("core panicked"), "error"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_failed_generation_replaces_the_models_success_text(error, expected_event):
+    """A failure event plus the model's "запускаю" would read as success to the user."""
+
+    genplanner_service = FailingGenPlannerService(error)
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile": "жилая"}, "reply": "Генерация запущена!"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=FakeChatStorageClient(),
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="жилая, запускай", chat_id=None),
+        )
+    )
+
+    reply = "".join(e["content"] for e in events if e["type"] == "token")
+    assert genplanner_service.calls, "generation should have been attempted"
+    assert any(e["type"] == expected_event and e["stage"] == "run_generation" for e in events)
+    assert not any(e["type"] == "result" for e in events)
+    assert "Генерация запущена!" not in reply
+    assert "ошибк" in reply.lower() or "не запустилась" in reply.lower()
