@@ -149,9 +149,7 @@ async def stream_chat_turn(
                 "message": "Не удалось применить выбранные параметры — уточни, что нужно поменять.",
             }
             action = "ask_clarifying_question"
-            # Same reason as the failure branches below: the patch was rejected, so the
-            # model's own reply describes parameters that were never applied.
-            reply = "Не понял параметры генерации. Опиши их ещё раз, пожалуйста."
+            reply = reply or "Не понял параметры генерации. Опиши их ещё раз, пожалуйста."
 
     result_payload: dict[str, Any] | None = None
 

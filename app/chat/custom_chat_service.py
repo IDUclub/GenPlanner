@@ -175,9 +175,7 @@ async def stream_custom_chat_turn(
                 "message": "Не удалось применить выбранные параметры — уточни профиль зонирования.",
             }
             action = "ask_clarifying_question"
-            # Same reason as the failure branches below: the patch was rejected, so the
-            # model's own reply describes parameters that were never applied.
-            reply = "Не понял выбранный профиль зонирования. Назови его ещё раз, пожалуйста."
+            reply = reply or "Не понял выбранный профиль зонирования. Назови его ещё раз, пожалуйста."
 
     result_payload: dict[str, Any] | None = None
 
