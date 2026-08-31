@@ -169,7 +169,9 @@ async def stream_custom_chat_turn(
 
     if action == "run_generation":
         if not draft.is_ready_for_generation():
-            reply = reply or "Нужен выбранный профиль зонирования, прежде чем запускать генерацию — какой хочешь?"
+            # Same as in the scenario chat: never let the model's optimistic "запускаю"
+            # stand when the profile it named could not be resolved and nothing ran.
+            reply = "Нужен выбранный профиль зонирования, прежде чем запускать генерацию — какой хочешь?"
         else:
             assert draft.profile_id is not None
             try:

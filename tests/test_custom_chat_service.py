@@ -175,3 +175,29 @@ async def test_agent_picks_the_profile_by_name_and_generation_gets_its_id():
 
     assert len(genplanner_service.calls) == 1
     assert genplanner_service.calls[0].profile_id == 1
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_profile_does_not_leave_the_user_thinking_generation_started():
+    """The model may claim it is running; if nothing ran, the user must be told so."""
+
+    storage = FakeChatStorageClient()
+    genplanner_service = FakeGenPlannerService()
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile": "зона мечты"}, "reply": "запускаю"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=storage,
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="__bogus__ запускай", chat_id=None),
+        )
+    )
+
+    reply = "".join(e["content"] for e in events if e["type"] == "token")
+    assert not genplanner_service.calls
+    assert not any(e["type"] == "result" for e in events)
+    assert "запускаю" not in reply
+    assert "профиль" in reply

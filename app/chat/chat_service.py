@@ -143,9 +143,11 @@ async def stream_chat_turn(
 
     if action == "run_generation":
         if not draft.is_ready_for_generation():
-            reply = (
-                reply or "Нужен хотя бы примерный баланс зон, прежде чем запускать генерацию — какие пропорции хочешь?"
-            )
+            # The model's own reply announces a generation that is not going to happen
+            # (it asked to run with no usable balance -- e.g. every zone it named was
+            # unresolvable), so it is replaced rather than kept: telling the user
+            # "запускаю" while nothing runs is worse than asking again.
+            reply = "Нужен хотя бы примерный баланс зон, прежде чем запускать генерацию — какие пропорции хочешь?"
         else:
             try:
                 project_id = await _resolve_project_id(genplanner_service, scenario_id, token)
