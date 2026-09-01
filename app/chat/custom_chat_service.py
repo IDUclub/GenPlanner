@@ -16,6 +16,7 @@ from .agent.custom_prompts import build_custom_system_prompt
 from .agent.custom_schema import CUSTOM_AGENT_ACTION_SCHEMA
 from .chat_common import build_llm_history, chunk_reply
 from .dto.chat_custom_dto import ChatCustomTurnDTO
+from .result_localization import localize_result_payload
 
 
 def _extract_custom_draft_from_history(messages: list[dict[str, Any]]) -> CustomGenerationDraft:
@@ -189,7 +190,7 @@ async def stream_custom_chat_turn(
             try:
                 dto = GenPlannerCustomDTO(profile_id=draft.profile_id, territory=resolved_territory)
                 result = await genplanner_service.run_custom_func_generation(dto)
-                result_payload = result.model_dump()
+                result_payload = localize_result_payload(result.model_dump())
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"custom chat-triggered generation failed: {detail}")

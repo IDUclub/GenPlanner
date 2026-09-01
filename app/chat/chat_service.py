@@ -16,6 +16,7 @@ from .agent.prompts import build_system_prompt
 from .agent.schema import AGENT_ACTION_SCHEMA
 from .chat_common import build_llm_history, chunk_reply
 from .dto.chat_dto import ChatTurnDTO
+from .result_localization import localize_result_payload
 
 
 def _extract_draft_from_history(messages: list[dict[str, Any]]) -> GenerationDraft:
@@ -175,7 +176,7 @@ async def stream_chat_turn(
                     test=params.test,
                 )
                 result = await genplanner_service.run_func_generation(dto, token, config)
-                result_payload = result.model_dump()
+                result_payload = localize_result_payload(result.model_dump())
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"chat-triggered generation failed: {detail}")
