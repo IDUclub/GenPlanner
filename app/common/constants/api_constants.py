@@ -238,3 +238,18 @@ def profile_name_by_id(profile_id: int | str) -> str | None:
     if str(profile_id) == str(_BASIC_PROFILE_ID):
         return _UNTYPED_ZONE_NAME_RU
     return territory_zone_name_by_id(profile_id)
+
+
+def territory_zone_name_by_kind(kind_value: str) -> str | None:
+    """
+    Human-readable name of a genplanner ``TerritoryZoneKind`` value (e.g. "recreation").
+
+    Generation results carry the kind as an English string in ``territory_zone_name``;
+    this resolves it back to the same Russian vocabulary the chat and the zone reference
+    table already use, without going through an id (a generated zone may have none).
+    """
+
+    for kind, name in territory_zone_kind_names_ru.items():
+        if kind.value == kind_value:
+            return name
+    return None
