@@ -15,6 +15,7 @@ from .agent.draft import GenerationDraft
 from .agent.prompts import build_system_prompt
 from .agent.schema import AGENT_ACTION_SCHEMA
 from .chat_common import build_llm_history, chunk_reply
+from .chat_title import build_chat_title
 from .dto.chat_dto import ChatTurnDTO
 from .result_localization import localize_result_payload
 
@@ -94,7 +95,11 @@ async def stream_chat_turn(
 
     if persist and not chat_id:
         try:
-            created = await chat_storage_client.create_chat(user_id, scenario_id=scenario_id)
+            created = await chat_storage_client.create_chat(
+                user_id,
+                title=build_chat_title(params.user_query),
+                scenario_id=scenario_id,
+            )
             chat_id = created.get("chat_id")
             yield {"type": "chat_created", "chat_id": chat_id, "title": created.get("title")}
         except ChatStorageError as exc:
