@@ -31,7 +31,14 @@ def _build_zones_table() -> str:
     return "\n".join(f"- {name}" for name in territory_zone_names())
 
 
-def build_system_prompt(draft: GenerationDraft) -> str:
+CHAT_TITLE_HINT_RU = """Это первое сообщение диалога, поэтому дополнительно заполни поле chat_title — короткое название
+этого чата для списка истории. 2-5 слов на русском, именная группа по сути запроса
+(«Зонирование с упором на жильё», «Промзона рядом с дорогами»), с заглавной буквы, без кавычек, без
+точки в конце, не приветствие и не вопрос. Если по первому сообщению суть ещё не ясна — назови чат по
+теме («Генерация функционального зонирования»)."""
+
+
+def build_system_prompt(draft: GenerationDraft, include_chat_title: bool = False) -> str:
     """
     Render the chat system prompt with the current zone reference table and the
     in-progress draft, so the model always sees up-to-date state without needing the
@@ -39,6 +46,8 @@ def build_system_prompt(draft: GenerationDraft) -> str:
     """
 
     template = _load_prompt_template()
-    return template.replace("{zones_table}", _build_zones_table()).replace(
-        "{draft_json}", json.dumps(draft.as_named_dict(), ensure_ascii=False)
+    return (
+        template.replace("{zones_table}", _build_zones_table())
+        .replace("{draft_json}", json.dumps(draft.as_named_dict(), ensure_ascii=False))
+        .replace("{chat_title_hint}", CHAT_TITLE_HINT_RU if include_chat_title else "")
     )

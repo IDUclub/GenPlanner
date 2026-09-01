@@ -78,3 +78,34 @@ AGENT_ACTION_SCHEMA: dict = {
     },
     "required": ["action", "reply"],
 }
+
+
+CHAT_TITLE_SCHEMA: dict = {
+    "type": "string",
+    "description": (
+        "Short Russian title for this new chat: a 2-5 word noun phrase naming what the user wants "
+        "(e.g. «Зонирование с упором на жильё»), never a greeting, a whole sentence, a question, "
+        "quotes or a trailing period. Asked for only on the first turn of a chat."
+    ),
+}
+
+
+def with_chat_title(schema: dict) -> dict:
+    """
+    Same schema plus a required `chat_title`, for the first turn of a new chat.
+
+    Length is not constrained here on purpose: not every constrained-decoding backend
+    honours minLength/maxLength, and the caller shortens the title anyway.
+    """
+
+    return {
+        **schema,
+        "properties": {**schema["properties"], "chat_title": CHAT_TITLE_SCHEMA},
+        "required": [*schema["required"], "chat_title"],
+    }
+
+
+def build_agent_action_schema(include_chat_title: bool = False) -> dict:
+    """Per-turn schema: the base decision schema, plus `chat_title` when the chat is new."""
+
+    return with_chat_title(AGENT_ACTION_SCHEMA) if include_chat_title else AGENT_ACTION_SCHEMA
