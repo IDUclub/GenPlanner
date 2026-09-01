@@ -1,5 +1,9 @@
 from typing import Any
 
+from loguru import logger
+
+from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
+
 _CHUNK_SIZE = 24
 
 
@@ -46,3 +50,60 @@ def build_llm_history(messages: list[dict[str, Any]], max_messages: int = 10) ->
             result.append({"role": role, "content": combined})
 
     return result[-max_messages:]
+
+
+async def persist_user_turn(
+    chat_storage_client: ChatStorageClient,
+    user_id: str,
+    chat_id: str | None,
+    *,
+    scenario_id: int | None,
+    user_query: str,
+    title: str,
+    user_message_metadata: dict[str, Any] | None = None,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """
+    Create the chat when it is new and append the user's message to it.
+
+    Runs after the model has answered, not before, so a brand-new chat can be created
+    with the title the model produced in the same call. Returns the chat id (None when
+    creation failed, meaning nothing can be persisted for this turn) together with the
+    envelopes the caller has to yield -- a plain function rather than a generator so the
+    caller can act on the chat id instead of having to sift it back out of the stream.
+    """
+
+    envelopes: list[dict[str, Any]] = []
+
+    if not chat_id:
+        try:
+            created = await chat_storage_client.create_chat(user_id, title=title, scenario_id=scenario_id)
+            chat_id = created.get("chat_id")
+            envelopes.append({"type": "chat_created", "chat_id": chat_id, "title": created.get("title")})
+        except ChatStorageError as exc:
+            logger.warning(f"chat_storage create_chat failed: {exc}")
+            envelopes.append(
+                {
+                    "type": "warning",
+                    "stage": "create_chat",
+                    "detail": str(exc),
+                    "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
+                }
+            )
+            return None, envelopes
+
+    try:
+        await chat_storage_client.add_message(
+            user_id, chat_id, role="user", content=user_query, metadata=user_message_metadata
+        )
+    except ChatStorageError as exc:
+        logger.warning(f"chat_storage add user message failed: {exc}")
+        envelopes.append(
+            {
+                "type": "warning",
+                "stage": "add_user_message",
+                "detail": str(exc),
+                "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
+            }
+        )
+
+    return chat_id, envelopes

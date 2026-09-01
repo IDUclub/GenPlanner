@@ -11,6 +11,8 @@ is what free-form ids allowed). CustomGenerationDraft maps the name back to an i
 
 from app.common.constants.api_constants import profile_names
 
+from .schema import with_chat_title
+
 CUSTOM_AGENT_ACTION_SCHEMA: dict = {
     "type": "object",
     "properties": {
@@ -51,3 +53,9 @@ CUSTOM_AGENT_ACTION_SCHEMA: dict = {
     },
     "required": ["action", "reply"],
 }
+
+
+def build_custom_agent_action_schema(include_chat_title: bool = False) -> dict:
+    """Per-turn schema: the base decision schema, plus `chat_title` when the chat is new."""
+
+    return with_chat_title(CUSTOM_AGENT_ACTION_SCHEMA) if include_chat_title else CUSTOM_AGENT_ACTION_SCHEMA

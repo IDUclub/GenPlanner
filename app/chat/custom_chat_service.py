@@ -13,9 +13,9 @@ from app.gen_planner.gen_planner_service import GenPlannerService
 
 from .agent.custom_draft import CustomGenerationDraft
 from .agent.custom_prompts import build_custom_system_prompt
-from .agent.custom_schema import CUSTOM_AGENT_ACTION_SCHEMA
-from .chat_common import build_llm_history, chunk_reply
-from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title
+from .agent.custom_schema import build_custom_agent_action_schema
+from .chat_common import build_llm_history, chunk_reply, persist_user_turn
+from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title, resolve_chat_title
 from .dto.chat_custom_dto import ChatCustomTurnDTO
 from .result_localization import localize_result_payload
 
@@ -114,43 +114,15 @@ async def stream_custom_chat_turn(
 
     is_new_territory_upload = territory is not None
 
-    if persist and not chat_id:
-        try:
-            created = await chat_storage_client.create_chat(
-                user_id,
-                title=build_chat_title(params.user_query, CUSTOM_FALLBACK_TITLE_RU),
-                scenario_id=None,
-            )
-            chat_id = created.get("chat_id")
-            yield {"type": "chat_created", "chat_id": chat_id, "title": created.get("title")}
-        except ChatStorageError as exc:
-            logger.warning(f"chat_storage create_chat failed: {exc}")
-            yield {
-                "type": "warning",
-                "stage": "create_chat",
-                "detail": str(exc),
-                "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
-            }
-            persist = False
+    user_message_metadata = (
+        {"territory": _territory_to_geojson_dict(resolved_territory)} if is_new_territory_upload else None
+    )
 
-    if persist and chat_id:
-        try:
-            user_message_metadata = (
-                {"territory": _territory_to_geojson_dict(resolved_territory)} if is_new_territory_upload else None
-            )
-            await chat_storage_client.add_message(
-                user_id, chat_id, role="user", content=params.user_query, metadata=user_message_metadata
-            )
-        except ChatStorageError as exc:
-            logger.warning(f"chat_storage add user message failed: {exc}")
-            yield {
-                "type": "warning",
-                "stage": "add_user_message",
-                "detail": str(exc),
-                "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
-            }
+    # Same ordering as the scenario chat: the model names a new chat, so nothing is
+    # persisted until it has answered -- still before any `token` reaches the frontend.
+    is_new_chat = not chat_id
 
-    system_prompt = build_custom_system_prompt(draft)
+    system_prompt = build_custom_system_prompt(draft, include_chat_title=persist and is_new_chat)
     llm_messages = [
         {"role": "system", "content": system_prompt},
         *history,
@@ -158,12 +130,43 @@ async def stream_custom_chat_turn(
     ]
 
     try:
-        decision = await llm_client.complete_json(llm_messages, schema=CUSTOM_AGENT_ACTION_SCHEMA)
+        decision = await llm_client.complete_json(
+            llm_messages,
+            schema=build_custom_agent_action_schema(include_chat_title=persist and is_new_chat),
+        )
     except LLMChatError as exc:
         logger.warning(f"custom chat agent decision failed: {exc}")
+        if persist:
+            # The model never answered, so the chat falls back to a title derived from
+            # the question -- the question (and its territory) is still worth keeping.
+            chat_id, envelopes = await persist_user_turn(
+                chat_storage_client,
+                user_id,
+                chat_id,
+                scenario_id=None,
+                user_query=params.user_query,
+                title=build_chat_title(params.user_query, CUSTOM_FALLBACK_TITLE_RU),
+                user_message_metadata=user_message_metadata,
+            )
+            for envelope in envelopes:
+                yield envelope
         yield {"type": "error", "stage": "llm", "detail": str(exc)}
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
+
+    if persist:
+        chat_id, envelopes = await persist_user_turn(
+            chat_storage_client,
+            user_id,
+            chat_id,
+            scenario_id=None,
+            user_query=params.user_query,
+            title=resolve_chat_title(decision.get("chat_title"), params.user_query, CUSTOM_FALLBACK_TITLE_RU),
+            user_message_metadata=user_message_metadata,
+        )
+        for envelope in envelopes:
+            yield envelope
+        persist = chat_id is not None
 
     action = decision.get("action") or "chat"
     reply = decision.get("reply") or ""

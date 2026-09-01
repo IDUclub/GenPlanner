@@ -13,9 +13,9 @@ from app.gen_planner.gen_planner_service import GenPlannerService
 
 from .agent.draft import GenerationDraft
 from .agent.prompts import build_system_prompt
-from .agent.schema import AGENT_ACTION_SCHEMA
-from .chat_common import build_llm_history, chunk_reply
-from .chat_title import build_chat_title
+from .agent.schema import build_agent_action_schema
+from .chat_common import build_llm_history, chunk_reply, persist_user_turn
+from .chat_title import build_chat_title, resolve_chat_title
 from .dto.chat_dto import ChatTurnDTO
 from .result_localization import localize_result_payload
 
@@ -93,38 +93,12 @@ async def stream_chat_turn(
                 "message": "Не удалось загрузить историю чата — отвечаю без учёта предыдущих сообщений.",
             }
 
-    if persist and not chat_id:
-        try:
-            created = await chat_storage_client.create_chat(
-                user_id,
-                title=build_chat_title(params.user_query),
-                scenario_id=scenario_id,
-            )
-            chat_id = created.get("chat_id")
-            yield {"type": "chat_created", "chat_id": chat_id, "title": created.get("title")}
-        except ChatStorageError as exc:
-            logger.warning(f"chat_storage create_chat failed: {exc}")
-            yield {
-                "type": "warning",
-                "stage": "create_chat",
-                "detail": str(exc),
-                "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
-            }
-            persist = False
+    # A new chat is named by the model, which needs the user's message to name it, so
+    # both the chat and the user's message are stored only after the decision call --
+    # early enough that the frontend still gets `chat_created` before any `token`.
+    is_new_chat = not chat_id
 
-    if persist and chat_id:
-        try:
-            await chat_storage_client.add_message(user_id, chat_id, role="user", content=params.user_query)
-        except ChatStorageError as exc:
-            logger.warning(f"chat_storage add user message failed: {exc}")
-            yield {
-                "type": "warning",
-                "stage": "add_user_message",
-                "detail": str(exc),
-                "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
-            }
-
-    system_prompt = build_system_prompt(draft)
+    system_prompt = build_system_prompt(draft, include_chat_title=persist and is_new_chat)
     llm_messages = [
         {"role": "system", "content": system_prompt},
         *history,
@@ -132,12 +106,41 @@ async def stream_chat_turn(
     ]
 
     try:
-        decision = await llm_client.complete_json(llm_messages, schema=AGENT_ACTION_SCHEMA)
+        decision = await llm_client.complete_json(
+            llm_messages,
+            schema=build_agent_action_schema(include_chat_title=persist and is_new_chat),
+        )
     except LLMChatError as exc:
         logger.warning(f"chat agent decision failed: {exc}")
+        if persist:
+            # The model never answered, so the chat falls back to a title derived from
+            # the question -- the question itself is still worth keeping.
+            chat_id, envelopes = await persist_user_turn(
+                chat_storage_client,
+                user_id,
+                chat_id,
+                scenario_id=scenario_id,
+                user_query=params.user_query,
+                title=build_chat_title(params.user_query),
+            )
+            for envelope in envelopes:
+                yield envelope
         yield {"type": "error", "stage": "llm", "detail": str(exc)}
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
+
+    if persist:
+        chat_id, envelopes = await persist_user_turn(
+            chat_storage_client,
+            user_id,
+            chat_id,
+            scenario_id=scenario_id,
+            user_query=params.user_query,
+            title=resolve_chat_title(decision.get("chat_title"), params.user_query),
+        )
+        for envelope in envelopes:
+            yield envelope
+        persist = chat_id is not None
 
     action = decision.get("action") or "chat"
     reply = decision.get("reply") or ""
