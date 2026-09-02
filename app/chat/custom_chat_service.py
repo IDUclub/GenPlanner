@@ -1,26 +1,26 @@
+import json
 from typing import Any, AsyncIterator
 
 from fastapi import HTTPException
-from iduconfig import Config
 from loguru import logger
 from pydantic import ValidationError
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
-from app.common.exceptions.http_exception import http_exception
+from app.common.geometries_dto.geometries import PolygonalFeatureCollection
 from app.common.llm.chat_client import ChatClient, LLMChatError
-from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
+from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.gen_planner_service import GenPlannerService
 
-from .agent.draft import GenerationDraft
-from .agent.prompts import build_system_prompt
-from .agent.schema import build_agent_action_schema
+from .agent.custom_draft import CustomGenerationDraft
+from .agent.custom_prompts import build_custom_system_prompt
+from .agent.custom_schema import build_custom_agent_action_schema
 from .chat_common import build_llm_history, chunk_reply, persist_user_turn
-from .chat_title import build_chat_title, resolve_chat_title
-from .dto.chat_dto import ChatTurnDTO
+from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title, resolve_chat_title
+from .dto.chat_custom_dto import ChatCustomTurnDTO
 from .result_localization import localize_result_payload
 
 
-def _extract_draft_from_history(messages: list[dict[str, Any]]) -> GenerationDraft:
+def _extract_custom_draft_from_history(messages: list[dict[str, Any]]) -> CustomGenerationDraft:
     """Find the most recent assistant message carrying a `draft` in its metadata."""
 
     for message in reversed(messages):
@@ -28,62 +28,71 @@ def _extract_draft_from_history(messages: list[dict[str, Any]]) -> GenerationDra
             continue
         draft_data = (message.get("metadata") or {}).get("draft")
         if draft_data:
-            return GenerationDraft.model_validate(draft_data)
-    return GenerationDraft()
+            return CustomGenerationDraft.model_validate(draft_data)
+    return CustomGenerationDraft()
 
 
-async def _resolve_project_id(genplanner_service: GenPlannerService, scenario_id: int, token: str) -> int:
+def _territory_to_geojson_dict(territory: PolygonalFeatureCollection) -> dict[str, Any]:
     """
-    Resolve project_id from scenario_id, same lookup GenPlannerService.restore_params
-    does -- needed here because GenPlannerFuncZonesDTO requires project_id at
-    construction time (pydantic), and the chat flow only ever has scenario_id.
+    Serialize via geopandas rather than PolygonalFeatureCollection.as_dict(): as_dict()
+    omits the per-feature GeoJSON `type` key (it's only ever fed back into
+    gpd.GeoDataFrame.from_features, which doesn't need it), so it doesn't round-trip
+    through PolygonalFeatureCollection.model_validate() the way this needs to.
     """
 
-    scenario_info = await genplanner_service.urban_api_client.get_scenario_info(scenario_id, token)
-    project_id = (scenario_info.get("project") or {}).get("project_id")
-    if project_id is None:
-        raise http_exception(
-            404,
-            "Project ID cannot be resolved from scenario info",
-            _input={"scenario_id": scenario_id},
-            _detail={"scenario_info": scenario_info},
-        )
-    return project_id
+    return json.loads(territory.as_gdf(4326).to_json())
 
 
-async def stream_chat_turn(
+def _extract_territory_from_history(messages: list[dict[str, Any]]) -> PolygonalFeatureCollection | None:
+    """
+    Find the most recent user message carrying a `territory` in its metadata -- the
+    boundary uploaded on some earlier turn of this chat, so later turns don't need to
+    re-upload the file unless they want to replace it. Most recent (not earliest) so a
+    mid-conversation re-upload actually overrides the original boundary for turns after it.
+    """
+
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        territory_data = (message.get("metadata") or {}).get("territory")
+        if territory_data:
+            return PolygonalFeatureCollection.model_validate(territory_data)
+    return None
+
+
+async def stream_custom_chat_turn(
     *,
     llm_client: ChatClient,
     chat_storage_client: ChatStorageClient | None,
     genplanner_service: GenPlannerService,
-    config: Config,
-    token: str,
     user_id: str | None,
-    scenario_id: int,
-    params: ChatTurnDTO,
+    territory: PolygonalFeatureCollection | None,
+    params: ChatCustomTurnDTO,
 ) -> AsyncIterator[dict[str, Any]]:
     """
-    Run one turn of the GenPlanner chat agent, yielding gMART-style envelopes:
-    `chat_created`, `token`, `result`, `warning`, `error`, `done`. Transport-agnostic --
-    the controller wraps each envelope into an SSE event.
+    Run one turn of the GenPlanner custom-territory chat agent (no scenario_id/project_id
+    -- the territory is an uploaded file boundary), yielding gMART-style envelopes:
+    `chat_created`, `token`, `result`, `warning`, `error`, `done`.
 
-    One `complete_json` call per turn decides the action (see agent/schema.py) and
-    produces the reply text in the same call; the reply is then chunked and "replayed"
-    as `token` events rather than issuing a second LLM call just for streaming.
+    Unlike stream_chat_turn, there's no Urban API scenario to resolve project_id, roads,
+    water or slope exclusion from -- generation runs on the uploaded territory geometry
+    alone, applying a single zoning profile (see CustomGenerationDraft).
     """
 
     chat_id = params.chat_id
     persist = chat_storage_client is not None and bool(user_id)
 
     history: list[dict[str, str]] = []
-    draft = GenerationDraft()
+    draft = CustomGenerationDraft()
+    territory_from_history: PolygonalFeatureCollection | None = None
 
     if persist and chat_id:
         try:
             existing = await chat_storage_client.get_chat(user_id, chat_id)
             messages = existing.get("messages") or []
             history = build_llm_history(messages)
-            draft = _extract_draft_from_history(messages)
+            draft = _extract_custom_draft_from_history(messages)
+            territory_from_history = _extract_territory_from_history(messages)
         except ChatStorageError as exc:
             logger.warning(f"chat_storage get_chat (history) failed: {exc}")
             yield {
@@ -93,12 +102,27 @@ async def stream_chat_turn(
                 "message": "Не удалось загрузить историю чата — отвечаю без учёта предыдущих сообщений.",
             }
 
-    # A new chat is named by the model, which needs the user's message to name it, so
-    # both the chat and the user's message are stored only after the decision call --
-    # early enough that the frontend still gets `chat_created` before any `token`.
+    resolved_territory = territory or territory_from_history
+    if resolved_territory is None:
+        yield {
+            "type": "error",
+            "stage": "territory",
+            "detail": "territory_file is required on the first message of a custom chat",
+        }
+        yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
+        return
+
+    is_new_territory_upload = territory is not None
+
+    user_message_metadata = (
+        {"territory": _territory_to_geojson_dict(resolved_territory)} if is_new_territory_upload else None
+    )
+
+    # Same ordering as the scenario chat: the model names a new chat, so nothing is
+    # persisted until it has answered -- still before any `token` reaches the frontend.
     is_new_chat = not chat_id
 
-    system_prompt = build_system_prompt(draft, include_chat_title=persist and is_new_chat)
+    system_prompt = build_custom_system_prompt(draft, include_chat_title=persist and is_new_chat)
     llm_messages = [
         {"role": "system", "content": system_prompt},
         *history,
@@ -108,20 +132,21 @@ async def stream_chat_turn(
     try:
         decision = await llm_client.complete_json(
             llm_messages,
-            schema=build_agent_action_schema(include_chat_title=persist and is_new_chat),
+            schema=build_custom_agent_action_schema(include_chat_title=persist and is_new_chat),
         )
     except LLMChatError as exc:
-        logger.warning(f"chat agent decision failed: {exc}")
+        logger.warning(f"custom chat agent decision failed: {exc}")
         if persist:
             # The model never answered, so the chat falls back to a title derived from
-            # the question -- the question itself is still worth keeping.
+            # the question -- the question (and its territory) is still worth keeping.
             chat_id, envelopes = await persist_user_turn(
                 chat_storage_client,
                 user_id,
                 chat_id,
-                scenario_id=scenario_id,
+                scenario_id=None,
                 user_query=params.user_query,
-                title=build_chat_title(params.user_query),
+                title=build_chat_title(params.user_query, CUSTOM_FALLBACK_TITLE_RU),
+                user_message_metadata=user_message_metadata,
             )
             for envelope in envelopes:
                 yield envelope
@@ -134,9 +159,10 @@ async def stream_chat_turn(
             chat_storage_client,
             user_id,
             chat_id,
-            scenario_id=scenario_id,
+            scenario_id=None,
             user_query=params.user_query,
-            title=resolve_chat_title(decision.get("chat_title"), params.user_query),
+            title=resolve_chat_title(decision.get("chat_title"), params.user_query, CUSTOM_FALLBACK_TITLE_RU),
+            user_message_metadata=user_message_metadata,
         )
         for envelope in envelopes:
             yield envelope
@@ -150,44 +176,32 @@ async def stream_chat_turn(
         try:
             draft = draft.merge_patch(patch)
         except ValidationError as exc:
-            logger.warning(f"chat agent produced an invalid draft patch {patch}: {exc}")
+            logger.warning(f"custom chat agent produced an invalid draft patch {patch}: {exc}")
             yield {
                 "type": "warning",
                 "stage": "update_draft",
                 "detail": str(exc),
-                "message": "Не удалось применить выбранные параметры — уточни, что нужно поменять.",
+                "message": "Не удалось применить выбранные параметры — уточни профиль зонирования.",
             }
             action = "ask_clarifying_question"
-            reply = reply or "Не понял параметры генерации. Опиши их ещё раз, пожалуйста."
+            reply = reply or "Не понял выбранный профиль зонирования. Назови его ещё раз, пожалуйста."
 
     result_payload: dict[str, Any] | None = None
 
     if action == "run_generation":
         if not draft.is_ready_for_generation():
-            # The model's own reply announces a generation that is not going to happen
-            # (it asked to run with no usable balance -- e.g. every zone it named was
-            # unresolvable), so it is replaced rather than kept: telling the user
-            # "запускаю" while nothing runs is worse than asking again.
-            reply = "Нужен хотя бы примерный баланс зон, прежде чем запускать генерацию — какие пропорции хочешь?"
+            # Same as in the scenario chat: never let the model's optimistic "запускаю"
+            # stand when the profile it named could not be resolved and nothing ran.
+            reply = "Нужен выбранный профиль зонирования, прежде чем запускать генерацию — какой хочешь?"
         else:
+            assert draft.profile_id is not None
             try:
-                project_id = await _resolve_project_id(genplanner_service, scenario_id, token)
-                dto = GenPlannerFuncZonesDTO(
-                    project_id=project_id,
-                    scenario_id=scenario_id,
-                    territory_balance=draft.territory_balance,
-                    neighbour_pairs=draft.neighbour_pairs,
-                    forbidden_pairs=draft.forbidden_pairs,
-                    min_block_area=draft.min_block_area or {},
-                    elevation_angle=draft.elevation_angle,
-                    roads_extend_distance=draft.roads_extend_distance,
-                    test=params.test,
-                )
-                result = await genplanner_service.run_func_generation(dto, token, config)
+                dto = GenPlannerCustomDTO(profile_id=draft.profile_id, territory=resolved_territory)
+                result = await genplanner_service.run_custom_func_generation(dto)
                 result_payload = localize_result_payload(result.model_dump())
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
-                logger.warning(f"chat-triggered generation failed: {detail}")
+                logger.warning(f"custom chat-triggered generation failed: {detail}")
                 yield {"type": "warning", "stage": "run_generation", "detail": detail}
                 # The model already wrote a reply announcing the generation; keeping it
                 # would tell the user it succeeded while the error event says otherwise,
@@ -201,7 +215,7 @@ async def stream_chat_turn(
                 # HTTPException used to escape this generator, which kills the SSE stream
                 # mid-flight: the browser then reports a bare network/CORS failure with no
                 # status instead of an error the user can see.
-                logger.exception(f"chat-triggered generation crashed: {exc}")
+                logger.exception(f"custom chat-triggered generation crashed: {exc}")
                 yield {
                     "type": "error",
                     "stage": "run_generation",
@@ -210,7 +224,10 @@ async def stream_chat_turn(
                 # The model already wrote a reply announcing the generation; keeping it
                 # would tell the user it succeeded while the error event says otherwise,
                 # so the failure text replaces it outright.
-                reply = "Генерация завершилась ошибкой на стороне сервиса. Попробуй ещё раз или измени параметры."
+                reply = (
+                    "Генерация завершилась ошибкой на стороне сервиса. "
+                    "Попробуй ещё раз или пришли другую границу территории."
+                )
 
     for piece in chunk_reply(reply):
         yield {"type": "token", "content": piece}

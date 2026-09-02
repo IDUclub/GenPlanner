@@ -8,6 +8,8 @@ services:
       dockerfile: ./Dockerfile
     ports:
       - 80:80
+    volumes:
+      - ./runtime_data:/app/runtime_data
 
   mcp:
     image: gen_planner:0.3.2s

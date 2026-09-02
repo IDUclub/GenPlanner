@@ -1,9 +1,10 @@
+import json
 from functools import lru_cache
 from pathlib import Path
 
 from loguru import logger
 
-from app.common.constants.api_constants import default_terr_zones_map, territory_zone_kind_names_ru
+from app.common.constants.api_constants import territory_zone_names
 
 from .draft import GenerationDraft
 
@@ -20,16 +21,24 @@ def _load_prompt_template() -> str:
 
 
 def _build_zones_table() -> str:
-    """List every default territorial zone id with a human-readable (Russian) kind name."""
+    """
+    List the territorial zone names the chat may use.
 
-    lines = []
-    for zone_id, zone in sorted(default_terr_zones_map.items(), key=lambda kv: int(kv[0])):
-        name = territory_zone_kind_names_ru.get(zone.kind, zone.kind.value)
-        lines.append(f"{zone_id} — {name}")
-    return "\n".join(lines)
+    Names, not ids: the user speaks in zone names and so does the agent's patch --
+    GenerationDraft translates them to ids on the way into the DTO.
+    """
+
+    return "\n".join(f"- {name}" for name in territory_zone_names())
 
 
-def build_system_prompt(draft: GenerationDraft) -> str:
+CHAT_TITLE_HINT_RU = """Это первое сообщение диалога, поэтому дополнительно заполни поле chat_title — короткое название
+этого чата для списка истории. 2-5 слов на русском, именная группа по сути запроса
+(«Зонирование с упором на жильё», «Промзона рядом с дорогами»), с заглавной буквы, без кавычек, без
+точки в конце, не приветствие и не вопрос. Если по первому сообщению суть ещё не ясна — назови чат по
+теме («Генерация функционального зонирования»)."""
+
+
+def build_system_prompt(draft: GenerationDraft, include_chat_title: bool = False) -> str:
     """
     Render the chat system prompt with the current zone reference table and the
     in-progress draft, so the model always sees up-to-date state without needing the
@@ -37,6 +46,8 @@ def build_system_prompt(draft: GenerationDraft) -> str:
     """
 
     template = _load_prompt_template()
-    return template.replace("{zones_table}", _build_zones_table()).replace(
-        "{draft_json}", draft.model_dump_json(exclude_none=True)
+    return (
+        template.replace("{zones_table}", _build_zones_table())
+        .replace("{draft_json}", json.dumps(draft.as_named_dict(), ensure_ascii=False))
+        .replace("{chat_title_hint}", CHAT_TITLE_HINT_RU if include_chat_title else "")
     )

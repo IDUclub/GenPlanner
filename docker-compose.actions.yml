@@ -6,6 +6,8 @@ services:
       - 80:80
     env_file:
       - .env.development
+    volumes:
+      - ./runtime_data:/app/runtime_data
     restart: always
 
   mcp:

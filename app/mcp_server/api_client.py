@@ -26,7 +26,7 @@ def _stringify_query_params(params: dict[str, Any] | None) -> dict[str, Any] | N
 class GenPlannerApiClient:
     """
     Thin async client for the GenPlanner API used by the MCP server, mirroring
-    ChatStorageClient/OllamaChatClient's style (aiohttp, one ClientSession per call).
+    ChatStorageClient/VllmChatClient's style (aiohttp, one ClientSession per call).
 
     Unlike AsyncJsonApiHandler this also supports POST with both query params and a
     JSON body, since run_func_generation splits GenPlannerFuncZonesDTO fields across
