@@ -25,20 +25,21 @@ def _collection(properties: dict) -> dict:
     }
 
 
-def _localized(zones: dict | None = None, roads: dict | None = None) -> dict:
+def _localized(zones: dict | None = None, roads: dict | None = None, trim_road_level_depth: bool = False) -> dict:
     payload = {
         "zones": _collection(zones if zones is not None else {}),
         "roads": _collection(roads if roads is not None else {}),
     }
-    return localize_result_payload(payload)
+    return localize_result_payload(payload, trim_road_level_depth=trim_road_level_depth)
 
 
 def _zone_properties(properties: dict) -> dict:
     return _localized(zones=properties)["zones"]["features"][0]["properties"]
 
 
-def _road_properties(properties: dict) -> dict:
-    return _localized(roads=properties)["roads"]["features"][0]["properties"]
+def _road_properties(properties: dict, trim_road_level_depth: bool = False) -> dict:
+    localized = _localized(roads=properties, trim_road_level_depth=trim_road_level_depth)
+    return localized["roads"]["features"][0]["properties"]
 
 
 def test_zone_kind_wins_over_the_numeric_id():
@@ -99,6 +100,30 @@ def test_existing_road_keeps_its_urban_api_type():
 
 def test_generated_road_has_no_type_id_to_keep():
     assert PHYSICAL_OBJECT_TYPE_KEY not in _road_properties({"road_lvl": "regulated highway"})
+
+
+def test_custom_mode_road_level_loses_its_splitting_depth():
+    properties = _road_properties({"road_lvl": "local road, level 4"}, trim_road_level_depth=True)
+
+    assert properties[ROAD_LEVEL_KEY] == "local road"
+    assert properties[ROAD_CLASS_KEY] == ROAD_CLASS_STREET
+
+
+def test_custom_mode_leaves_a_depthless_level_as_it_is():
+    properties = _road_properties({"road_lvl": "regulated highway"}, trim_road_level_depth=True)
+
+    assert properties[ROAD_LEVEL_KEY] == "regulated highway"
+    assert properties[ROAD_CLASS_KEY] == ROAD_CLASS_HIGHWAY
+
+
+def test_custom_mode_keeps_an_unknown_level_verbatim():
+    assert _road_properties({"road_lvl": "high speed highway"}, trim_road_level_depth=True)[ROAD_LEVEL_KEY] == (
+        "high speed highway"
+    )
+
+
+def test_scenario_mode_keeps_the_splitting_depth():
+    assert _road_properties({"road_lvl": "local road, level 4"})[ROAD_LEVEL_KEY] == "local road, level 4"
 
 
 def test_unknown_road_level_gets_no_class():
