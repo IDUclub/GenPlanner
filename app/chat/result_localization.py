@@ -15,6 +15,7 @@ schema their existing platform consumers parse.
 """
 
 import re
+from functools import partial
 from typing import Any
 
 from app.common.constants.api_constants import territory_zone_name_by_id, territory_zone_name_by_kind
@@ -29,8 +30,6 @@ ROAD_ADDRESS_LABEL_RU = "Адрес"
 ROAD_LEVEL_KEY = "road_lvl"
 ROAD_CLASS_KEY = "road_class"
 PHYSICAL_OBJECT_TYPE_KEY = "physical_object_type_id"
-
-_ROAD_MACHINE_KEYS = (PHYSICAL_OBJECT_TYPE_KEY, ROAD_LEVEL_KEY)
 
 ROAD_CLASS_HIGHWAY = "highway"
 ROAD_CLASS_STREET = "street"
@@ -116,7 +115,26 @@ def _road_class(road_level: Any) -> str | None:
     return None
 
 
-def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
+def _road_level_without_depth(road_level: Any) -> Any:
+    """
+    Drop the ``, level N`` suffix the block splitter appends to ``local road``.
+
+    The depth is counted per zone from that zone's area, so the same level means a
+    different road in a different zone and nothing can be read from it across a result.
+    A level the mapping does not know is returned untouched.
+    """
+
+    if not isinstance(road_level, str):
+        return road_level
+
+    normalized = re.sub(r"\s+", " ", road_level.strip().lower())
+    for prefix, _ in _ROAD_CLASS_BY_LEVEL_PREFIX:
+        if normalized.startswith(prefix):
+            return prefix
+    return road_level
+
+
+def _localize_road_properties(properties: dict[str, Any], *, trim_level_depth: bool = False) -> dict[str, Any]:
     """
     Keep the road attributes a user can read, plus the ones the map layer is styled by.
 
@@ -133,12 +151,15 @@ def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
         if value is not None:
             localized[label] = value
 
-    for key in _ROAD_MACHINE_KEYS:
-        value = properties.get(key)
-        if value is not None:
-            localized[key] = value
+    object_type_id = properties.get(PHYSICAL_OBJECT_TYPE_KEY)
+    if object_type_id is not None:
+        localized[PHYSICAL_OBJECT_TYPE_KEY] = object_type_id
 
-    road_class = _road_class(properties.get(ROAD_LEVEL_KEY))
+    road_level = properties.get(ROAD_LEVEL_KEY)
+    if road_level is not None:
+        localized[ROAD_LEVEL_KEY] = _road_level_without_depth(road_level) if trim_level_depth else road_level
+
+    road_class = _road_class(road_level)
     if road_class is not None:
         localized[ROAD_CLASS_KEY] = road_class
 
@@ -168,11 +189,19 @@ def _localize_feature_collection(collection: Any, localize_properties) -> Any:
     return {**collection, "features": localized_features}
 
 
-def localize_result_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return the generation result with Russian attribute names and values."""
+def localize_result_payload(payload: dict[str, Any], *, trim_road_level_depth: bool = False) -> dict[str, Any]:
+    """
+    Return the generation result with Russian attribute names and values.
+
+    ``trim_road_level_depth`` is passed by the custom-territory chat, where every road is
+    generated: without the depth ``road_lvl`` there holds two values instead of one per
+    splitting depth.
+    """
 
     return {
         **payload,
         "zones": _localize_feature_collection(payload.get("zones"), _localize_zone_properties),
-        "roads": _localize_feature_collection(payload.get("roads"), _localize_road_properties),
+        "roads": _localize_feature_collection(
+            payload.get("roads"), partial(_localize_road_properties, trim_level_depth=trim_road_level_depth)
+        ),
     }
