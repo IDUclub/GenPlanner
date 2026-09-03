@@ -2,6 +2,7 @@ import pytest
 
 from app.chat.result_localization import (
     GENERATED_LABEL_RU,
+    PHYSICAL_OBJECT_TYPE_KEY,
     ROAD_CLASS_EXISTING,
     ROAD_CLASS_HIGHWAY,
     ROAD_CLASS_KEY,
@@ -85,6 +86,19 @@ def test_road_level_survives_under_its_machine_name():
 )
 def test_every_road_level_folds_into_a_closed_set_of_classes(road_level, expected):
     assert _road_properties({"road_lvl": road_level})[ROAD_CLASS_KEY] == expected
+
+
+def test_existing_road_keeps_its_urban_api_type():
+    properties = _road_properties(
+        {"name": "Шлиссельбургское шоссе", "physical_object_type_id": 51, "road_lvl": "user_roads"}
+    )
+
+    assert properties[PHYSICAL_OBJECT_TYPE_KEY] == 51
+    assert properties[ROAD_CLASS_KEY] == ROAD_CLASS_EXISTING
+
+
+def test_generated_road_has_no_type_id_to_keep():
+    assert PHYSICAL_OBJECT_TYPE_KEY not in _road_properties({"road_lvl": "regulated highway"})
 
 
 def test_unknown_road_level_gets_no_class():

@@ -28,6 +28,9 @@ ROAD_ADDRESS_LABEL_RU = "Адрес"
 
 ROAD_LEVEL_KEY = "road_lvl"
 ROAD_CLASS_KEY = "road_class"
+PHYSICAL_OBJECT_TYPE_KEY = "physical_object_type_id"
+
+_ROAD_MACHINE_KEYS = (PHYSICAL_OBJECT_TYPE_KEY, ROAD_LEVEL_KEY)
 
 ROAD_CLASS_HIGHWAY = "highway"
 ROAD_CLASS_STREET = "street"
@@ -117,9 +120,11 @@ def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
     """
     Keep the road attributes a user can read, plus the ones the map layer is styled by.
 
-    ``road_lvl`` and ``road_class`` keep machine names and untranslated values: the frontend
-    colours the road layer by them, and translating what styling keys off would tie the
-    layer's colours to display text.
+    ``physical_object_type_id``, ``road_lvl`` and ``road_class`` keep machine names and
+    untranslated values: the frontend colours the road layer by them, and translating what
+    styling keys off would tie the layer's colours to display text. Only roads taken from
+    the scenario carry a type id -- the ones the generator draws exist nowhere in Urban API,
+    and generation from an uploaded border pulls no existing roads at all.
     """
 
     localized: dict[str, Any] = {}
@@ -128,11 +133,12 @@ def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
         if value is not None:
             localized[label] = value
 
-    road_level = properties.get(ROAD_LEVEL_KEY)
-    if road_level is not None:
-        localized[ROAD_LEVEL_KEY] = road_level
+    for key in _ROAD_MACHINE_KEYS:
+        value = properties.get(key)
+        if value is not None:
+            localized[key] = value
 
-    road_class = _road_class(road_level)
+    road_class = _road_class(properties.get(ROAD_LEVEL_KEY))
     if road_class is not None:
         localized[ROAD_CLASS_KEY] = road_class
 
