@@ -132,7 +132,25 @@ class UrbanApiClient(ApiClient):
         ]
         results = await self.extract_several_requests(requests, as_gdfs=True)
         if results:
-            return pd.concat(results)
+            physical_objects = pd.concat(results)
+
+            # Urban API uses ``physical_object_type_id`` as a query parameter, but
+            # returns that value inside the ``physical_object_type`` object.  Keep a
+            # flat copy as well: GeoDataFrame consumers (including GenPlanner and the
+            # chat result serializer) work with columns and cannot address the nested
+            # value directly.
+            if "physical_object_type" in physical_objects.columns:
+                nested_type_ids = physical_objects["physical_object_type"].map(
+                    lambda value: value.get("physical_object_type_id") if isinstance(value, dict) else None
+                )
+                if "physical_object_type_id" in physical_objects.columns:
+                    physical_objects["physical_object_type_id"] = physical_objects[
+                        "physical_object_type_id"
+                    ].where(physical_objects["physical_object_type_id"].notna(), nested_type_ids)
+                else:
+                    physical_objects["physical_object_type_id"] = nested_type_ids
+
+            return physical_objects
         else:
             return None
 
