@@ -1,5 +1,11 @@
+import pytest
+
 from app.chat.result_localization import (
     GENERATED_LABEL_RU,
+    ROAD_CLASS_EXISTING,
+    ROAD_CLASS_HIGHWAY,
+    ROAD_CLASS_KEY,
+    ROAD_CLASS_STREET,
     ROAD_ADDRESS_LABEL_RU,
     ROAD_LEVEL_KEY,
     ROAD_NAME_LABEL_RU,
@@ -68,14 +74,37 @@ def test_road_level_survives_under_its_machine_name():
     assert properties[ROAD_LEVEL_KEY] == "local road, level 2"
 
 
-def test_road_without_a_level_gets_no_level_key():
+@pytest.mark.parametrize(
+    "road_level, expected",
+    [
+        ("regulated highway", ROAD_CLASS_HIGHWAY),
+        ("local road, level 1", ROAD_CLASS_STREET),
+        ("local road, level 7", ROAD_CLASS_STREET),
+        ("user_roads", ROAD_CLASS_EXISTING),
+    ],
+)
+def test_every_road_level_folds_into_a_closed_set_of_classes(road_level, expected):
+    assert _road_properties({"road_lvl": road_level})[ROAD_CLASS_KEY] == expected
+
+
+def test_unknown_road_level_gets_no_class():
+    properties = _road_properties({"road_lvl": "high speed highway"})
+
+    assert properties[ROAD_LEVEL_KEY] == "high speed highway"
+    assert ROAD_CLASS_KEY not in properties
+
+
+def test_road_without_a_level_gets_neither_level_nor_class():
     properties = _road_properties({"name": "Улица", "address": "Адрес", "roads_width": 5})
 
     assert properties == {ROAD_NAME_LABEL_RU: "Улица", ROAD_ADDRESS_LABEL_RU: "Адрес"}
 
 
-def test_generated_road_carries_only_its_level():
-    assert _road_properties({"road_lvl": "regulated highway"}) == {ROAD_LEVEL_KEY: "regulated highway"}
+def test_generated_road_carries_only_its_level_and_class():
+    assert _road_properties({"road_lvl": "regulated highway"}) == {
+        ROAD_LEVEL_KEY: "regulated highway",
+        ROAD_CLASS_KEY: ROAD_CLASS_HIGHWAY,
+    }
 
 
 def test_geometry_and_collection_shape_are_untouched():

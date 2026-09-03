@@ -14,6 +14,7 @@ Only the chat payload goes through this: the REST endpoints keep the machine-rea
 schema their existing platform consumers parse.
 """
 
+import re
 from typing import Any
 
 from app.common.constants.api_constants import territory_zone_name_by_id, territory_zone_name_by_kind
@@ -26,6 +27,17 @@ ROAD_NAME_LABEL_RU = "Название"
 ROAD_ADDRESS_LABEL_RU = "Адрес"
 
 ROAD_LEVEL_KEY = "road_lvl"
+ROAD_CLASS_KEY = "road_class"
+
+ROAD_CLASS_HIGHWAY = "highway"
+ROAD_CLASS_STREET = "street"
+ROAD_CLASS_EXISTING = "existing"
+
+_ROAD_CLASS_BY_LEVEL_PREFIX: tuple[tuple[str, str], ...] = (
+    ("regulated highway", ROAD_CLASS_HIGHWAY),
+    ("local road", ROAD_CLASS_STREET),
+    ("user_roads", ROAD_CLASS_EXISTING),
+)
 
 _UNKNOWN_ZONE_NAME_RU = "не определена"
 
@@ -80,13 +92,34 @@ def _localize_zone_properties(properties: dict[str, Any]) -> dict[str, Any]:
     return localized
 
 
+def _road_class(road_level: Any) -> str | None:
+    """
+    Fold ``road_lvl`` into one of three values a map legend can be built from.
+
+    The raw field is not a closed set: block-splitting roads are labelled
+    "local road, level N" where N runs as deep as a zone's area over its minimum block area
+    demands, so a single result carries as many distinct strings as it had splitting depths.
+    Unrecognised values yield None rather than a bucket of their own -- an invented category
+    would be styled as if it meant something.
+    """
+
+    if not isinstance(road_level, str):
+        return None
+
+    normalized = re.sub(r"\s+", " ", road_level.strip().lower())
+    for prefix, road_class in _ROAD_CLASS_BY_LEVEL_PREFIX:
+        if normalized.startswith(prefix):
+            return road_class
+    return None
+
+
 def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
     """
-    Keep the road attributes a user can read, plus the one the map layer is styled by.
+    Keep the road attributes a user can read, plus the ones the map layer is styled by.
 
-    ``road_lvl`` keeps its machine name and its raw value ("regulated highway",
-    "local road, level 2", "user_roads"): the frontend colours the road layer by it, and a
-    translated value would make that styling depend on display text.
+    ``road_lvl`` and ``road_class`` keep machine names and untranslated values: the frontend
+    colours the road layer by them, and translating what styling keys off would tie the
+    layer's colours to display text.
     """
 
     localized: dict[str, Any] = {}
@@ -98,6 +131,10 @@ def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
     road_level = properties.get(ROAD_LEVEL_KEY)
     if road_level is not None:
         localized[ROAD_LEVEL_KEY] = road_level
+
+    road_class = _road_class(road_level)
+    if road_class is not None:
+        localized[ROAD_CLASS_KEY] = road_class
 
     return localized
 
