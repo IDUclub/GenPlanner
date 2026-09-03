@@ -7,7 +7,8 @@ the generation pipeline works with (``territory_zone``, ``territory_zone_name``,
 ``is_generated``) would be read by a planner as untranslated debug output. Everything the
 panel shows is renamed and re-valued here, and the numeric zone id is replaced by the zone
 name rather than shown alongside it -- ids are an implementation detail the chat never
-exposes anywhere else either.
+exposes anywhere else either. The one exception is ``road_lvl``, which survives verbatim
+because the layer's styling keys off it.
 
 Only the chat payload goes through this: the REST endpoints keep the machine-readable
 schema their existing platform consumers parse.
@@ -23,6 +24,8 @@ SOURCE_ZONE_ID_LABEL_RU = "Идентификатор исходной зоны"
 
 ROAD_NAME_LABEL_RU = "Название"
 ROAD_ADDRESS_LABEL_RU = "Адрес"
+
+ROAD_LEVEL_KEY = "road_lvl"
 
 _UNKNOWN_ZONE_NAME_RU = "не определена"
 
@@ -78,13 +81,24 @@ def _localize_zone_properties(properties: dict[str, Any]) -> dict[str, Any]:
 
 
 def _localize_road_properties(properties: dict[str, Any]) -> dict[str, Any]:
-    """Keep only the two road attributes that mean anything to a user, under Russian labels."""
+    """
+    Keep the road attributes a user can read, plus the one the map layer is styled by.
+
+    ``road_lvl`` keeps its machine name and its raw value ("regulated highway",
+    "local road, level 2", "user_roads"): the frontend colours the road layer by it, and a
+    translated value would make that styling depend on display text.
+    """
 
     localized: dict[str, Any] = {}
     for key, label in (("name", ROAD_NAME_LABEL_RU), ("address", ROAD_ADDRESS_LABEL_RU)):
         value = properties.get(key)
         if value is not None:
             localized[label] = value
+
+    road_level = properties.get(ROAD_LEVEL_KEY)
+    if road_level is not None:
+        localized[ROAD_LEVEL_KEY] = road_level
+
     return localized
 
 
