@@ -198,7 +198,7 @@ async def stream_custom_chat_turn(
             try:
                 dto = GenPlannerCustomDTO(profile_id=draft.profile_id, territory=resolved_territory)
                 result = await genplanner_service.run_custom_func_generation(dto)
-                result_payload = localize_result_payload(result.model_dump())
+                result_payload = localize_result_payload(result.model_dump(), trim_road_level_depth=True)
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"custom chat-triggered generation failed: {detail}")

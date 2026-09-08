@@ -78,13 +78,31 @@ class FakeGenPlannerResult:
         return {"zones": empty_collection, "roads": empty_collection}
 
 
+class FakeGeneratedRoadsResult:
+    def model_dump(self):
+        return {
+            "zones": {"type": "FeatureCollection", "features": []},
+            "roads": {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+                        "properties": {"road_lvl": "local road, level 3", "roads_width": 5},
+                    }
+                ],
+            },
+        }
+
+
 class FakeGenPlannerService:
     def __init__(self):
         self.calls: list[Any] = []
+        self.result: Any = FakeGenPlannerResult()
 
     async def run_custom_func_generation(self, params):
         self.calls.append(params)
-        return FakeGenPlannerResult()
+        return self.result
 
 
 async def _collect(agen):
@@ -176,6 +194,33 @@ async def test_agent_picks_the_profile_by_name_and_generation_gets_its_id():
 
     assert len(genplanner_service.calls) == 1
     assert genplanner_service.calls[0].profile_id == 1
+
+
+@pytest.mark.asyncio
+async def test_generated_roads_come_back_without_a_splitting_depth():
+    """Nothing here is taken from Urban API, so road_lvl holds two values and can be styled by."""
+
+    storage = FakeChatStorageClient()
+    genplanner_service = FakeGenPlannerService()
+    genplanner_service.result = FakeGeneratedRoadsResult()
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile_id": 1}, "reply": "запускаю"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=storage,
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="жилую застройку, запускай", chat_id=None),
+        )
+    )
+
+    result = next(event for event in events if event["type"] == "result")
+    properties = result["roads"]["features"][0]["properties"]
+
+    assert properties["road_lvl"] == "local road"
+    assert properties["road_class"] == "street"
 
 
 @pytest.mark.asyncio
