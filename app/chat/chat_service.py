@@ -14,7 +14,7 @@ from app.gen_planner.gen_planner_service import GenPlannerService
 from .agent.draft import GenerationDraft
 from .agent.prompts import build_system_prompt
 from .agent.schema import build_agent_action_schema
-from .chat_common import build_llm_history, chunk_reply, persist_user_turn
+from .chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU, build_llm_history, chunk_reply, persist_user_turn
 from .chat_title import build_chat_title, resolve_chat_title
 from .dto.chat_dto import ChatTurnDTO
 from .result_localization import localize_result_payload
@@ -109,6 +109,7 @@ async def stream_chat_turn(
         decision = await llm_client.complete_json(
             llm_messages,
             schema=build_agent_action_schema(include_chat_title=persist and is_new_chat),
+            temperature=DECISION_TEMPERATURE,
         )
     except LLMChatError as exc:
         logger.warning(f"chat agent decision failed: {exc}")
@@ -125,7 +126,7 @@ async def stream_chat_turn(
             )
             for envelope in envelopes:
                 yield envelope
-        yield {"type": "error", "stage": "llm", "detail": str(exc)}
+        yield {"type": "error", "stage": "llm", "detail": str(exc), "message": LLM_ERROR_MESSAGE_RU}
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
 

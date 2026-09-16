@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
+from app.chat.chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU
 from app.chat.custom_chat_service import (
     _extract_territory_from_history,
     _territory_to_geojson_dict,
@@ -10,6 +11,7 @@ from app.chat.custom_chat_service import (
 )
 from app.chat.dto.chat_custom_dto import ChatCustomTurnDTO
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
+from app.common.llm.chat_client import LLMChatError
 
 
 def _territory(lon: float, lat: float) -> PolygonalFeatureCollection:
@@ -67,9 +69,21 @@ class FakeChatStorageClient:
 class FakeChatClient:
     def __init__(self, decisions: list[dict[str, Any]]):
         self._decisions = list(decisions)
+        self.calls: list[dict[str, Any]] = []
 
-    async def complete_json(self, messages, schema):
+    async def complete_json(self, messages, schema, temperature=None):
+        self.calls.append({"messages": messages, "schema": schema, "temperature": temperature})
         return self._decisions.pop(0)
+
+
+class FailingChatClient:
+    """Chat client stand-in whose decision call always fails, the way an empty vLLM answer does."""
+
+    def __init__(self, error: LLMChatError):
+        self._error = error
+
+    async def complete_json(self, messages, schema, temperature=None):
+        raise self._error
 
 
 class FakeGenPlannerResult:
@@ -292,3 +306,65 @@ async def test_failed_generation_replaces_the_models_success_text(error, expecte
     assert not any(e["type"] == "result" for e in events)
     assert "Генерация запущена!" not in reply
     assert "ошибк" in reply.lower() or "не запустилась" in reply.lower()
+
+
+@pytest.mark.asyncio
+async def test_decision_call_pins_the_sampling_temperature():
+    """Left at the server default, the same turn gets a different action every other time."""
+
+    llm = FakeChatClient([{"action": "chat", "reply": "привет"}])
+
+    await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(),
+            user_id=None,
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="привет", chat_id=None),
+        )
+    )
+
+    assert llm.calls[0]["temperature"] == DECISION_TEMPERATURE
+
+
+@pytest.mark.asyncio
+async def test_llm_failure_carries_a_ready_made_message_for_the_user():
+    """The raw backend error used to be the only text the frontend had to show."""
+
+    raw = "vLLM returned no message content: finish_reason='stop', reasoning='Ready.'"
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=FailingChatClient(LLMChatError(raw)),
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(),
+            user_id=None,
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="да", chat_id=None),
+        )
+    )
+
+    error = next(event for event in events if event["type"] == "error")
+    assert error["stage"] == "llm"
+    assert error["message"] == LLM_ERROR_MESSAGE_RU
+    assert error["detail"] == raw
+    assert events[-1]["type"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_missing_territory_error_carries_a_message_for_the_user():
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=FakeChatClient([]),
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(),
+            user_id=None,
+            territory=None,
+            params=ChatCustomTurnDTO(user_query="запускай", chat_id=None),
+        )
+    )
+
+    error = next(event for event in events if event["type"] == "error")
+    assert error["stage"] == "territory"
+    assert error["message"] == "Нужна граница территории — приложи файл с ней к сообщению."

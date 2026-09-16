@@ -14,7 +14,7 @@ from app.gen_planner.gen_planner_service import GenPlannerService
 from .agent.custom_draft import CustomGenerationDraft
 from .agent.custom_prompts import build_custom_system_prompt
 from .agent.custom_schema import build_custom_agent_action_schema
-from .chat_common import build_llm_history, chunk_reply, persist_user_turn
+from .chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU, build_llm_history, chunk_reply, persist_user_turn
 from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title, resolve_chat_title
 from .dto.chat_custom_dto import ChatCustomTurnDTO
 from .result_localization import localize_result_payload
@@ -108,6 +108,7 @@ async def stream_custom_chat_turn(
             "type": "error",
             "stage": "territory",
             "detail": "territory_file is required on the first message of a custom chat",
+            "message": "Нужна граница территории — приложи файл с ней к сообщению.",
         }
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
@@ -133,6 +134,7 @@ async def stream_custom_chat_turn(
         decision = await llm_client.complete_json(
             llm_messages,
             schema=build_custom_agent_action_schema(include_chat_title=persist and is_new_chat),
+            temperature=DECISION_TEMPERATURE,
         )
     except LLMChatError as exc:
         logger.warning(f"custom chat agent decision failed: {exc}")
@@ -150,7 +152,7 @@ async def stream_custom_chat_turn(
             )
             for envelope in envelopes:
                 yield envelope
-        yield {"type": "error", "stage": "llm", "detail": str(exc)}
+        yield {"type": "error", "stage": "llm", "detail": str(exc), "message": LLM_ERROR_MESSAGE_RU}
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
 

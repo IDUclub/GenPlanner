@@ -6,6 +6,12 @@ from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatS
 
 _CHUNK_SIZE = 24
 
+# vLLM's own default (1.0 for gpt-oss) makes the decision step pick a different action
+# for the same turn, and sometimes return nothing at all.
+DECISION_TEMPERATURE = 0.2
+
+LLM_ERROR_MESSAGE_RU = "Модель не ответила на этот запрос. Повтори сообщение, пожалуйста."
+
 
 def chunk_reply(reply: str) -> list[str]:
     """
