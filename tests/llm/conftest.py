@@ -46,15 +46,22 @@ class FakeResponse:
 
 
 class FakeSession:
-    """Stands in for aiohttp.ClientSession's async context manager protocol."""
+    """
+    Stands in for aiohttp.ClientSession's async context manager protocol.
 
-    def __init__(self, response: FakeResponse):
-        self.response = response
+    Takes either one response, returned for every post(), or a list replayed in order --
+    the last one repeats once the list runs out, so retries can be given a different
+    response per attempt.
+    """
+
+    def __init__(self, responses: FakeResponse | list[FakeResponse]):
+        self.responses = responses if isinstance(responses, list) else [responses]
         self.post_calls: list[dict] = []
 
     def post(self, url, *, json=None):
+        response = self.responses[min(len(self.post_calls), len(self.responses) - 1)]
         self.post_calls.append({"url": url, "json": json})
-        return self.response
+        return response
 
     async def __aenter__(self):
         return self
@@ -70,7 +77,7 @@ def patch_client_session(monkeypatch):
     so tests can assert on the request made and control the response.
     """
 
-    def _patch(response: FakeResponse) -> FakeSession:
+    def _patch(response: FakeResponse | list[FakeResponse]) -> FakeSession:
         session = FakeSession(response)
         monkeypatch.setattr("aiohttp.ClientSession", MagicMock(return_value=session))
         return session
