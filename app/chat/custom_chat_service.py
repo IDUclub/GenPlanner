@@ -14,7 +14,14 @@ from app.gen_planner.gen_planner_service import GenPlannerService
 from .agent.custom_draft import CustomGenerationDraft
 from .agent.custom_prompts import build_custom_system_prompt
 from .agent.custom_schema import build_custom_agent_action_schema
-from .chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU, build_llm_history, chunk_reply, persist_user_turn
+from .chat_common import (
+    DECISION_TEMPERATURE,
+    LLM_ERROR_MESSAGE_RU,
+    build_llm_history,
+    chunk_reply,
+    persist_user_turn,
+    territory_result_geojson,
+)
 from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title, resolve_chat_title
 from .dto.chat_custom_dto import ChatCustomTurnDTO
 from .result_localization import localize_result_payload
@@ -201,6 +208,7 @@ async def stream_custom_chat_turn(
                 dto = GenPlannerCustomDTO(profile_id=draft.profile_id, territory=resolved_territory)
                 result = await genplanner_service.run_custom_func_generation(dto)
                 result_payload = localize_result_payload(result.model_dump(), trim_road_level_depth=True)
+                result_payload["territory"] = territory_result_geojson(resolved_territory.as_gdf(4326))
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"custom chat-triggered generation failed: {detail}")
@@ -235,7 +243,12 @@ async def stream_custom_chat_turn(
         yield {"type": "token", "content": piece}
 
     if result_payload is not None:
-        yield {"type": "result", "zones": result_payload["zones"], "roads": result_payload["roads"]}
+        yield {
+            "type": "result",
+            "zones": result_payload["zones"],
+            "roads": result_payload["roads"],
+            "territory": result_payload["territory"],
+        }
 
     assistant_message_id = None
     if persist and chat_id:
