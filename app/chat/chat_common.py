@@ -1,5 +1,7 @@
+import json
 from typing import Any
 
+import geopandas as gpd
 from loguru import logger
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
@@ -11,6 +13,18 @@ _CHUNK_SIZE = 24
 DECISION_TEMPERATURE = 0.2
 
 LLM_ERROR_MESSAGE_RU = "Модель не ответила на этот запрос. Повтори сообщение, пожалуйста."
+
+
+def territory_result_geojson(territory: gpd.GeoDataFrame) -> dict[str, Any]:
+    """
+    Boundary the generation ran on, for the chat `result` event, so the frontend can draw it
+    next to the zones in both chats (in the custom one it has no other source for it).
+    Geometry only: the attribute panel would otherwise show whatever the uploaded file or
+    Urban API happened to carry.
+    """
+
+    boundary = gpd.GeoDataFrame(geometry=territory.geometry.to_crs(4326).values, crs=4326)
+    return json.loads(boundary.to_json())
 
 
 def chunk_reply(reply: str) -> list[str]:

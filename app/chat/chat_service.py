@@ -14,7 +14,14 @@ from app.gen_planner.gen_planner_service import GenPlannerService
 from .agent.draft import GenerationDraft
 from .agent.prompts import build_system_prompt
 from .agent.schema import build_agent_action_schema
-from .chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU, build_llm_history, chunk_reply, persist_user_turn
+from .chat_common import (
+    DECISION_TEMPERATURE,
+    LLM_ERROR_MESSAGE_RU,
+    build_llm_history,
+    chunk_reply,
+    persist_user_turn,
+    territory_result_geojson,
+)
 from .chat_title import build_chat_title, resolve_chat_title
 from .dto.chat_dto import ChatTurnDTO
 from .result_localization import localize_result_payload
@@ -186,6 +193,9 @@ async def stream_chat_turn(
                 )
                 result = await genplanner_service.run_func_generation(dto, token, config)
                 result_payload = localize_result_payload(result.model_dump())
+                # restore_params filled in the project boundary on this same dto.
+                boundary = dto._territory_gdf  # pylint: disable=protected-access
+                result_payload["territory"] = territory_result_geojson(boundary)
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"chat-triggered generation failed: {detail}")
@@ -217,7 +227,12 @@ async def stream_chat_turn(
         yield {"type": "token", "content": piece}
 
     if result_payload is not None:
-        yield {"type": "result", "zones": result_payload["zones"], "roads": result_payload["roads"]}
+        yield {
+            "type": "result",
+            "zones": result_payload["zones"],
+            "roads": result_payload["roads"],
+            "territory": result_payload["territory"],
+        }
 
     assistant_message_id = None
     if persist and chat_id:
