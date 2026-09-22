@@ -10,8 +10,10 @@ from app.chat.custom_chat_service import (
     stream_custom_chat_turn,
 )
 from app.chat.dto.chat_custom_dto import ChatCustomTurnDTO
+from app.common.constants.api_constants import profile_name_by_id
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
 from app.common.llm.chat_client import LLMChatError
+from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG
 
 
 def _territory(lon: float, lat: float) -> PolygonalFeatureCollection:
@@ -368,3 +370,29 @@ async def test_missing_territory_error_carries_a_message_for_the_user():
     error = next(event for event in events if event["type"] == "error")
     assert error["stage"] == "territory"
     assert error["message"] == "Нужна граница территории — приложи файл с ней к сообщению."
+
+
+@pytest.mark.asyncio
+async def test_territory_too_small_for_the_profile_gets_a_dedicated_message():
+    """The recreation profile on a small boundary yields no roads -- the user needs to know what to change."""
+
+    error = HTTPException(status_code=422, detail={"msg": TERRITORY_TOO_SMALL_MSG, "input": {}, "detail": {}})
+    genplanner_service = FailingGenPlannerService(error)
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile": "рекреационная"}, "reply": "Запускаю!"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=FakeChatStorageClient(),
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="сгенерируй по профилю рекреация", chat_id=None),
+        )
+    )
+
+    reply = "".join(e["content"] for e in events if e["type"] == "token")
+    assert any(e["type"] == "warning" and e["stage"] == "run_generation" for e in events)
+    assert "Запускаю!" not in reply
+    assert "слишком мала" in reply
+    assert f"«{profile_name_by_id(genplanner_service.calls[0].profile_id)}»" in reply

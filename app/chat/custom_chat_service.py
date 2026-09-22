@@ -6,10 +6,11 @@ from loguru import logger
 from pydantic import ValidationError
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
+from app.common.constants.api_constants import profile_name_by_id
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
 from app.common.llm.chat_client import ChatClient, LLMChatError
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
-from app.gen_planner.gen_planner_service import GenPlannerService
+from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG, GenPlannerService
 
 from .agent.custom_draft import CustomGenerationDraft
 from .agent.custom_prompts import build_custom_system_prompt
@@ -208,10 +209,18 @@ async def stream_custom_chat_turn(
                 # The model already wrote a reply announcing the generation; keeping it
                 # would tell the user it succeeded while the error event says otherwise,
                 # so the failure text replaces it outright.
-                reply = (
-                    "Генерация не запустилась: "
-                    f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
-                )
+                if detail.get("msg") == TERRITORY_TOO_SMALL_MSG:
+                    profile_name = profile_name_by_id(draft.profile_id) or str(draft.profile_id)
+                    reply = (
+                        f"Территория слишком мала для профиля «{profile_name}»: внутри неё не помещается "
+                        "ни одной дороги, поэтому разбить её на зоны не получилось. Увеличь границу "
+                        "территории или выбери другой профиль."
+                    )
+                else:
+                    reply = (
+                        "Генерация не запустилась: "
+                        f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
+                    )
             except Exception as exc:  # pylint: disable=broad-except
                 # Anything the genplanner core (or DTO validation) throws that isn't an
                 # HTTPException used to escape this generator, which kills the SSE stream
