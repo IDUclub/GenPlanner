@@ -3,13 +3,17 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
+from app.chat.chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU
 from app.chat.custom_chat_service import (
     _extract_territory_from_history,
     _territory_to_geojson_dict,
     stream_custom_chat_turn,
 )
 from app.chat.dto.chat_custom_dto import ChatCustomTurnDTO
+from app.common.constants.api_constants import profile_name_by_id
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
+from app.common.llm.chat_client import LLMChatError
+from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG
 
 
 def _territory(lon: float, lat: float) -> PolygonalFeatureCollection:
@@ -67,9 +71,21 @@ class FakeChatStorageClient:
 class FakeChatClient:
     def __init__(self, decisions: list[dict[str, Any]]):
         self._decisions = list(decisions)
+        self.calls: list[dict[str, Any]] = []
 
-    async def complete_json(self, messages, schema):
+    async def complete_json(self, messages, schema, temperature=None):
+        self.calls.append({"messages": messages, "schema": schema, "temperature": temperature})
         return self._decisions.pop(0)
+
+
+class FailingChatClient:
+    """Chat client stand-in whose decision call always fails, the way an empty vLLM answer does."""
+
+    def __init__(self, error: LLMChatError):
+        self._error = error
+
+    async def complete_json(self, messages, schema, temperature=None):
+        raise self._error
 
 
 class FakeGenPlannerResult:
@@ -224,6 +240,31 @@ async def test_generated_roads_come_back_without_a_splitting_depth():
 
 
 @pytest.mark.asyncio
+async def test_result_carries_the_uploaded_boundary():
+    """Outside a scenario the frontend has nowhere else to take the generation boundary from."""
+
+    storage = FakeChatStorageClient()
+    genplanner_service = FakeGenPlannerService()
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile_id": 1}, "reply": "запускаю"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=storage,
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="жилую застройку, запускай", chat_id=None),
+        )
+    )
+
+    result = next(event for event in events if event["type"] == "result")
+    territory = result["territory"]
+    assert len(territory["features"]) == 1
+    assert territory["features"][0]["geometry"] == _territory_to_geojson_dict(_TERRITORY_A)["features"][0]["geometry"]
+
+
+@pytest.mark.asyncio
 async def test_unresolvable_profile_does_not_leave_the_user_thinking_generation_started():
     """The model may claim it is running; if nothing ran, the user must be told so."""
 
@@ -292,3 +333,91 @@ async def test_failed_generation_replaces_the_models_success_text(error, expecte
     assert not any(e["type"] == "result" for e in events)
     assert "Генерация запущена!" not in reply
     assert "ошибк" in reply.lower() or "не запустилась" in reply.lower()
+
+
+@pytest.mark.asyncio
+async def test_decision_call_pins_the_sampling_temperature():
+    """Left at the server default, the same turn gets a different action every other time."""
+
+    llm = FakeChatClient([{"action": "chat", "reply": "привет"}])
+
+    await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(),
+            user_id=None,
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="привет", chat_id=None),
+        )
+    )
+
+    assert llm.calls[0]["temperature"] == DECISION_TEMPERATURE
+
+
+@pytest.mark.asyncio
+async def test_llm_failure_carries_a_ready_made_message_for_the_user():
+    """The raw backend error used to be the only text the frontend had to show."""
+
+    raw = "vLLM returned no message content: finish_reason='stop', reasoning='Ready.'"
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=FailingChatClient(LLMChatError(raw)),
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(),
+            user_id=None,
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="да", chat_id=None),
+        )
+    )
+
+    error = next(event for event in events if event["type"] == "error")
+    assert error["stage"] == "llm"
+    assert error["message"] == LLM_ERROR_MESSAGE_RU
+    assert error["detail"] == raw
+    assert events[-1]["type"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_missing_territory_error_carries_a_message_for_the_user():
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=FakeChatClient([]),
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(),
+            user_id=None,
+            territory=None,
+            params=ChatCustomTurnDTO(user_query="запускай", chat_id=None),
+        )
+    )
+
+    error = next(event for event in events if event["type"] == "error")
+    assert error["stage"] == "territory"
+    assert error["message"] == "Нужна граница территории — приложи файл с ней к сообщению."
+
+
+@pytest.mark.asyncio
+async def test_territory_too_small_for_the_profile_gets_a_dedicated_message():
+    """The recreation profile on a small boundary yields no roads -- the user needs to know what to change."""
+
+    error = HTTPException(status_code=422, detail={"msg": TERRITORY_TOO_SMALL_MSG, "input": {}, "detail": {}})
+    genplanner_service = FailingGenPlannerService(error)
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile": "рекреационная"}, "reply": "Запускаю!"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=FakeChatStorageClient(),
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="сгенерируй по профилю рекреация", chat_id=None),
+        )
+    )
+
+    reply = "".join(e["content"] for e in events if e["type"] == "token")
+    assert any(e["type"] == "warning" and e["stage"] == "run_generation" for e in events)
+    assert "Запускаю!" not in reply
+    assert "слишком мала" in reply
+    assert f"«{profile_name_by_id(genplanner_service.calls[0].profile_id)}»" in reply

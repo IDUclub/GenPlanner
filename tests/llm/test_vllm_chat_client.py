@@ -13,6 +13,26 @@ def _message_response(content: str, **extra) -> FakeResponse:
     return FakeResponse(200, json_body={"choices": [{"message": {"role": "assistant", "content": content, **extra}}]})
 
 
+def _empty_content_response(reasoning: str = "We need to run generation. Ready.") -> FakeResponse:
+    """A gpt-oss turn that ended in the reasoning channel: no content, finish_reason "stop"."""
+
+    return FakeResponse(
+        200,
+        json_body={
+            "id": "chatcmpl-aa1fb547f192ff55",
+            "model": "gpt-oss-20b",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": None, "reasoning": reasoning},
+                }
+            ],
+            "usage": {"prompt_tokens": 1533, "completion_tokens": 104},
+        },
+    )
+
+
 def _sse(chunk: dict) -> bytes:
     return f"data: {json.dumps(chunk, ensure_ascii=False)}\n".encode()
 
@@ -87,11 +107,35 @@ async def test_complete_json_raises_on_error_payload(client, patch_client_sessio
         await client.complete_json([{"role": "user", "content": "hi"}], schema=SCHEMA)
 
 
-async def test_complete_json_raises_when_only_reasoning_content_returned(client, patch_client_session):
-    patch_client_session(_message_response("", reasoning_content="thinking out loud"))
+async def test_complete_json_retries_when_the_model_answers_only_in_the_reasoning_channel(client, patch_client_session):
+    session = patch_client_session([_empty_content_response(), _message_response('{"action": "chat"}')])
+
+    assert await client.complete_json([{"role": "user", "content": "hi"}], schema=SCHEMA) == {"action": "chat"}
+    assert len(session.post_calls) == 2
+
+
+async def test_complete_json_raises_when_every_attempt_returns_only_reasoning(client, patch_client_session):
+    session = patch_client_session(_empty_content_response())
 
     with pytest.raises(VllmChatError, match="no message content"):
         await client.complete_json([{"role": "user", "content": "hi"}], schema=SCHEMA)
+
+    assert len(session.post_calls) == 2
+
+
+async def test_empty_content_error_reports_the_cause_without_the_raw_payload(client, patch_client_session):
+    """The error text reaches the frontend, so it carries the cause and nothing else."""
+
+    patch_client_session(_empty_content_response("We need to generate action run_generation. Ready."))
+
+    with pytest.raises(VllmChatError) as exc_info:
+        await client.complete_json([{"role": "user", "content": "hi"}], schema=SCHEMA)
+
+    detail = str(exc_info.value)
+    assert "finish_reason='stop'" in detail
+    assert "run_generation" in detail
+    assert "chatcmpl" not in detail
+    assert "completion_tokens" not in detail
 
 
 async def test_complete_json_error_is_catchable_as_llm_chat_error(client, patch_client_session):

@@ -6,15 +6,23 @@ from loguru import logger
 from pydantic import ValidationError
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
+from app.common.constants.api_constants import profile_name_by_id
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
 from app.common.llm.chat_client import ChatClient, LLMChatError
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
-from app.gen_planner.gen_planner_service import GenPlannerService
+from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG, GenPlannerService
 
 from .agent.custom_draft import CustomGenerationDraft
 from .agent.custom_prompts import build_custom_system_prompt
 from .agent.custom_schema import build_custom_agent_action_schema
-from .chat_common import build_llm_history, chunk_reply, persist_user_turn
+from .chat_common import (
+    DECISION_TEMPERATURE,
+    LLM_ERROR_MESSAGE_RU,
+    build_llm_history,
+    chunk_reply,
+    persist_user_turn,
+    territory_result_geojson,
+)
 from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title, resolve_chat_title
 from .dto.chat_custom_dto import ChatCustomTurnDTO
 from .result_localization import localize_result_payload
@@ -108,6 +116,7 @@ async def stream_custom_chat_turn(
             "type": "error",
             "stage": "territory",
             "detail": "territory_file is required on the first message of a custom chat",
+            "message": "Нужна граница территории — приложи файл с ней к сообщению.",
         }
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
@@ -133,6 +142,7 @@ async def stream_custom_chat_turn(
         decision = await llm_client.complete_json(
             llm_messages,
             schema=build_custom_agent_action_schema(include_chat_title=persist and is_new_chat),
+            temperature=DECISION_TEMPERATURE,
         )
     except LLMChatError as exc:
         logger.warning(f"custom chat agent decision failed: {exc}")
@@ -150,7 +160,7 @@ async def stream_custom_chat_turn(
             )
             for envelope in envelopes:
                 yield envelope
-        yield {"type": "error", "stage": "llm", "detail": str(exc)}
+        yield {"type": "error", "stage": "llm", "detail": str(exc), "message": LLM_ERROR_MESSAGE_RU}
         yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
         return
 
@@ -199,6 +209,7 @@ async def stream_custom_chat_turn(
                 dto = GenPlannerCustomDTO(profile_id=draft.profile_id, territory=resolved_territory)
                 result = await genplanner_service.run_custom_func_generation(dto)
                 result_payload = localize_result_payload(result.model_dump(), trim_road_level_depth=True)
+                result_payload["territory"] = territory_result_geojson(resolved_territory.as_gdf(4326))
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"custom chat-triggered generation failed: {detail}")
@@ -206,10 +217,18 @@ async def stream_custom_chat_turn(
                 # The model already wrote a reply announcing the generation; keeping it
                 # would tell the user it succeeded while the error event says otherwise,
                 # so the failure text replaces it outright.
-                reply = (
-                    "Генерация не запустилась: "
-                    f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
-                )
+                if detail.get("msg") == TERRITORY_TOO_SMALL_MSG:
+                    profile_name = profile_name_by_id(draft.profile_id) or str(draft.profile_id)
+                    reply = (
+                        f"Территория слишком мала для профиля «{profile_name}»: внутри неё не помещается "
+                        "ни одной дороги, поэтому разбить её на зоны не получилось. Увеличь границу "
+                        "территории или выбери другой профиль."
+                    )
+                else:
+                    reply = (
+                        "Генерация не запустилась: "
+                        f"{detail.get('msg', 'ошибка валидации параметров')}. Уточни, что поправить, и попробуем снова."
+                    )
             except Exception as exc:  # pylint: disable=broad-except
                 # Anything the genplanner core (or DTO validation) throws that isn't an
                 # HTTPException used to escape this generator, which kills the SSE stream
@@ -233,7 +252,12 @@ async def stream_custom_chat_turn(
         yield {"type": "token", "content": piece}
 
     if result_payload is not None:
-        yield {"type": "result", "zones": result_payload["zones"], "roads": result_payload["roads"]}
+        yield {
+            "type": "result",
+            "zones": result_payload["zones"],
+            "roads": result_payload["roads"],
+            "territory": result_payload["territory"],
+        }
 
     assistant_message_id = None
     if persist and chat_id:

@@ -5,27 +5,42 @@ from typing import Literal
 import geopandas as gpd
 import pandas as pd
 from genplanner import GenPlanner, TerritoryZone
+from genplanner.zone_relations.forbidden_terr_kind import FORBIDDEN_NEIGHBORHOOD
+from genplanner.zone_relations.relation_matrix import Relation, ZoneRelationMatrix
 from genplanner.zones import TerritoryZoneKind
 from iduconfig import Config
 from loguru import logger
 from shapely import buffer
 
-from genplanner.zone_relations.relation_matrix import Relation, ZoneRelationMatrix
-from genplanner.zone_relations.forbidden_terr_kind import FORBIDDEN_NEIGHBORHOOD
-
 from app.clients.ecodonat_api_client import EcodonutApiClient
 from app.clients.urban_api_client import UrbanApiClient
-from app.common.constants.api_constants import scenario_func_zones_map, default_terr_zones_map
+from app.common.constants.api_constants import default_terr_zones_map, scenario_func_zones_map
 
+from ..common.exceptions.http_exception import http_exception
 from .dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from .dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from .schema.gen_planner_schema import GenPlannerResultSchema
-from ..common.exceptions.http_exception import http_exception
 
 _UNSET = object()
 
 ROADS_OBJECTS_IDS = [50, 51, 52]
 WATER_OBJECTS_IDS = [2, 44, 45, 54, 55]
+
+TERRITORY_TOO_SMALL_MSG = (
+    "Территория слишком мала для выбранного профиля: внутри неё не помещается ни одной дороги. "
+    "Увеличьте границу территории или выберите другой профиль."
+)
+
+
+def _is_no_roads_generated_error(exc: Exception) -> bool:
+    """
+    genplanner's _run concatenates its generated roads with the user roads; when both are
+    empty (no roads fit inside a small territory, and the custom path has no user roads)
+    pd.concat degrades to a plain DataFrame and territory_splitter crashes on .to_crs.
+    Deterministic for a given territory/profile, so it must not be retried.
+    """
+
+    return isinstance(exc, AttributeError) and "'DataFrame' object has no attribute 'to_crs'" in str(exc)
 
 
 class GenPlannerService:
@@ -694,6 +709,14 @@ class GenPlannerService:
                 )
                 return zones, roads
             except Exception as exc:
+                if _is_no_roads_generated_error(exc):
+                    logger.warning(f"GenPlanner generated no roads, territory too small for {funczone}: {exc}")
+                    raise http_exception(
+                        422,
+                        TERRITORY_TOO_SMALL_MSG,
+                        _input={"funczone": str(funczone)},
+                        _detail={"reason": "no_roads_generated", "error": str(exc)},
+                    ) from exc
                 last_exception = exc
                 logger.exception(
                     f"GenPlanner generation attempt {attempt}/{attempts} failed: {exc}"

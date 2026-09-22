@@ -11,10 +11,22 @@ from app.common.llm.chat_client import LLMChatError, loads_json_object
 _SSE_DATA_PREFIX = "data:"
 _SSE_DONE = "[DONE]"
 _JSON_SCHEMA_NAME = "response"
+_EMPTY_CONTENT_ATTEMPTS = 2
 
 
 class VllmChatError(LLMChatError):
     """Raised when vLLM's /v1/chat/completions returns a non-2xx response or a malformed stream."""
+
+
+class VllmEmptyContentError(VllmChatError):
+    """
+    Raised when a response carries no assistant content.
+
+    Harmony-format reasoning models (gpt-oss) occasionally end their turn in the
+    reasoning channel without ever opening the final one: `finish_reason` is "stop",
+    `message.reasoning` holds the plan and `message.content` is empty. Measured at
+    ~2% of decision calls on gpt-oss-20b, so it is retried rather than surfaced.
+    """
 
 
 def _normalize_base_url(base_url: str) -> str:
@@ -144,6 +156,9 @@ class VllmChatClient:
         decoding -- used for the chat agent's one-call-per-turn decision step instead of
         hand-rolled tool-calling, which is unreliable across small local models.
 
+        A response with no assistant content is retried, up to `_EMPTY_CONTENT_ATTEMPTS`
+        calls in total -- see VllmEmptyContentError.
+
         Args:
             messages: Chat messages, system prompt included.
             schema: JSON Schema the response must conform to.
@@ -155,9 +170,40 @@ class VllmChatClient:
             dict[str, Any]: The parsed JSON object from `choices[0].message.content`.
 
         Raises:
-            VllmChatError: Non-2xx response, empty content, or content that isn't
-                (or doesn't contain) a valid JSON object.
+            VllmChatError: Non-2xx response, empty content on every attempt, or content
+                that isn't (or doesn't contain) a valid JSON object.
         """
+
+        for attempt in range(1, _EMPTY_CONTENT_ATTEMPTS):
+            try:
+                return await self._complete_json_once(
+                    messages,
+                    schema,
+                    model=model,
+                    temperature=temperature,
+                    request_timeout_seconds=request_timeout_seconds,
+                )
+            except VllmEmptyContentError as exc:
+                logger.warning(f"vLLM structured call attempt {attempt} returned no content, retrying: {exc}")
+
+        return await self._complete_json_once(
+            messages,
+            schema,
+            model=model,
+            temperature=temperature,
+            request_timeout_seconds=request_timeout_seconds,
+        )
+
+    async def _complete_json_once(
+        self,
+        messages: list[dict[str, str]],
+        schema: dict[str, Any],
+        *,
+        model: str | None,
+        temperature: float | None,
+        request_timeout_seconds: float,
+    ) -> dict[str, Any]:
+        """Single request/parse cycle behind complete_json."""
 
         payload: dict[str, Any] = {
             "model": model or self.default_model,
@@ -185,9 +231,15 @@ class VllmChatClient:
         self._raise_on_payload_error(data)
 
         choices = data.get("choices") or []
-        content = (choices[0].get("message") or {}).get("content") if choices else None
+        choice = choices[0] if choices else {}
+        message = choice.get("message") or {}
+        content = message.get("content")
         if not content:
-            raise VllmChatError(f"vLLM returned no message content: {data!r}")
+            reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
+            raise VllmEmptyContentError(
+                f"vLLM returned no message content: finish_reason={choice.get('finish_reason')!r}, "
+                f"reasoning={reasoning[:300]!r}"
+            )
 
         return loads_json_object(content)
 
