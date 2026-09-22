@@ -240,6 +240,31 @@ async def test_generated_roads_come_back_without_a_splitting_depth():
 
 
 @pytest.mark.asyncio
+async def test_result_carries_the_uploaded_boundary():
+    """Outside a scenario the frontend has nowhere else to take the generation boundary from."""
+
+    storage = FakeChatStorageClient()
+    genplanner_service = FakeGenPlannerService()
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"profile_id": 1}, "reply": "запускаю"}])
+
+    events = await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=storage,
+            genplanner_service=genplanner_service,
+            user_id="00000000-0000-0000-0000-000000000001",
+            territory=_TERRITORY_A,
+            params=ChatCustomTurnDTO(user_query="жилую застройку, запускай", chat_id=None),
+        )
+    )
+
+    result = next(event for event in events if event["type"] == "result")
+    territory = result["territory"]
+    assert len(territory["features"]) == 1
+    assert territory["features"][0]["geometry"] == _territory_to_geojson_dict(_TERRITORY_A)["features"][0]["geometry"]
+
+
+@pytest.mark.asyncio
 async def test_unresolvable_profile_does_not_leave_the_user_thinking_generation_started():
     """The model may claim it is running; if nothing ran, the user must be told so."""
 

@@ -1,5 +1,8 @@
 from typing import Any
 
+import geopandas as gpd
+from shapely.geometry import box
+
 from app.chat.chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU
 from app.chat.chat_service import stream_chat_turn
 from app.chat.dto.chat_dto import ChatTurnDTO
@@ -71,3 +74,52 @@ async def test_llm_failure_carries_a_ready_made_message_for_the_user():
     assert error["message"] == LLM_ERROR_MESSAGE_RU
     assert error["detail"] == raw
     assert events[-1]["type"] == "done"
+
+
+class FakeUrbanApiClient:
+    async def get_scenario_info(self, scenario_id, token):
+        return {"project": {"project_id": 7}}
+
+
+class FakeGenPlannerService:
+    """Does what restore_params does to the dto: sets the project boundary on it."""
+
+    def __init__(self, boundary: gpd.GeoDataFrame):
+        self.urban_api_client = FakeUrbanApiClient()
+        self._boundary = boundary
+
+    async def run_func_generation(self, params, token, config):
+        params._territory_gdf = self._boundary  # pylint: disable=protected-access
+        return FakeGenPlannerResult()
+
+
+class FakeGenPlannerResult:
+    def model_dump(self):
+        empty_collection = {"type": "FeatureCollection", "features": []}
+        return {"zones": empty_collection, "roads": empty_collection}
+
+
+async def test_result_carries_the_project_boundary_in_wgs84():
+    """The frontend draws the generation boundary from `result`, not from its own project data."""
+
+    boundary = gpd.GeoDataFrame({"name": ["проект"]}, geometry=[box(30.0, 59.0, 30.1, 59.1)], crs=4326)
+    llm = FakeChatClient([{"action": "run_generation", "patch": {"territory_balance": {"жилая": 1.0}}, "reply": "ok"}])
+
+    events = await _collect(
+        stream_chat_turn(
+            llm_client=llm,
+            chat_storage_client=None,
+            genplanner_service=FakeGenPlannerService(boundary.to_crs(32636)),
+            config=None,
+            token="token",
+            user_id=None,
+            scenario_id=_SCENARIO_ID,
+            params=ChatTurnDTO(user_query="запускай"),
+        )
+    )
+
+    result = next(event for event in events if event["type"] == "result")
+    territory = gpd.GeoDataFrame.from_features(result["territory"]["features"], crs=4326)
+    assert len(territory) == 1
+    assert territory.geometry.iloc[0].equals_exact(boundary.geometry.iloc[0], tolerance=1e-6)
+    assert result["territory"]["features"][0]["properties"] == {}
