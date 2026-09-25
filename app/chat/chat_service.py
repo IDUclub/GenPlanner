@@ -28,15 +28,32 @@ from .result_localization import localize_result_payload
 
 
 def _extract_draft_from_history(messages: list[dict[str, Any]]) -> GenerationDraft:
-    """Find the most recent assistant message carrying a `draft` in its metadata."""
+    """
+    Find the most recent message carrying a `draft` in its metadata. Usually that is the
+    assistant's reply; a user message carries one only when the frontend sent relation
+    pairs with it, so the pairs survive a turn whose assistant reply was never stored.
+    """
 
     for message in reversed(messages):
-        if message.get("role") != "assistant":
-            continue
         draft_data = (message.get("metadata") or {}).get("draft")
         if draft_data:
             return GenerationDraft.model_validate(draft_data)
     return GenerationDraft()
+
+
+def _user_message_metadata(params: ChatTurnDTO, draft: GenerationDraft) -> dict[str, Any] | None:
+    if params.neighbour_pairs is None and params.forbidden_pairs is None:
+        return None
+    return {"draft": draft.model_dump(exclude_none=True)}
+
+
+def _done_envelope(chat_id: str | None, assistant_message_id: str | None, draft: GenerationDraft) -> dict[str, Any]:
+    return {
+        "type": "done",
+        "chat_id": chat_id,
+        "assistant_message_id": assistant_message_id,
+        **draft.pairs_snapshot(),
+    }
 
 
 async def _resolve_project_id(genplanner_service: GenPlannerService, scenario_id: int, token: str) -> int:
@@ -100,6 +117,9 @@ async def stream_chat_turn(
                 "message": "Не удалось загрузить историю чата — отвечаю без учёта предыдущих сообщений.",
             }
 
+    draft = draft.with_pairs(params.neighbour_pairs, params.forbidden_pairs)
+    user_message_metadata = _user_message_metadata(params, draft)
+
     # A new chat is named by the model, which needs the user's message to name it, so
     # both the chat and the user's message are stored only after the decision call --
     # early enough that the frontend still gets `chat_created` before any `token`.
@@ -130,11 +150,12 @@ async def stream_chat_turn(
                 scenario_id=scenario_id,
                 user_query=params.user_query,
                 title=build_chat_title(params.user_query),
+                user_message_metadata=user_message_metadata,
             )
             for envelope in envelopes:
                 yield envelope
         yield {"type": "error", "stage": "llm", "detail": str(exc), "message": LLM_ERROR_MESSAGE_RU}
-        yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
+        yield _done_envelope(chat_id, None, draft)
         return
 
     if persist:
@@ -145,6 +166,7 @@ async def stream_chat_turn(
             scenario_id=scenario_id,
             user_query=params.user_query,
             title=resolve_chat_title(decision.get("chat_title"), params.user_query),
+            user_message_metadata=user_message_metadata,
         )
         for envelope in envelopes:
             yield envelope
@@ -167,6 +189,8 @@ async def stream_chat_turn(
             }
             action = "ask_clarifying_question"
             reply = reply or "Не понял параметры генерации. Опиши их ещё раз, пожалуйста."
+        # The matrix the user set by hand on this turn beats whatever the model read into the text.
+        draft = draft.with_pairs(params.neighbour_pairs, params.forbidden_pairs)
 
     result_payload: dict[str, Any] | None = None
 
@@ -254,4 +278,4 @@ async def stream_chat_turn(
                 "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
             }
 
-    yield {"type": "done", "chat_id": chat_id, "assistant_message_id": assistant_message_id}
+    yield _done_envelope(chat_id, assistant_message_id, draft)

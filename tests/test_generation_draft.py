@@ -66,3 +66,25 @@ def test_named_view_renders_ids_back_as_names():
         "forbidden_pairs": [["жилая", "промышленная"]],
         "elevation_angle": 10,
     }
+
+
+def test_with_pairs_none_keeps_the_current_pairs():
+    draft = GenerationDraft(neighbour_pairs=[(1, 2)], forbidden_pairs=[(1, 4)])
+
+    assert draft.with_pairs(None, None) == draft
+
+
+def test_with_pairs_empty_list_clears_unlike_merge_patch():
+    draft = GenerationDraft(neighbour_pairs=[(1, 2)], forbidden_pairs=[(1, 4)])
+
+    updated = draft.with_pairs([], None)
+
+    assert updated.neighbour_pairs == []
+    assert updated.forbidden_pairs == [(1, 4)]
+    assert draft.neighbour_pairs == [(1, 2)]
+
+
+def test_pairs_snapshot_renders_plain_lists():
+    draft = GenerationDraft(neighbour_pairs=[(1, 2)])
+
+    assert draft.pairs_snapshot() == {"neighbour_pairs": [[1, 2]], "forbidden_pairs": []}
