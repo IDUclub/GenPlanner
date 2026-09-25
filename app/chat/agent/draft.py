@@ -55,6 +55,33 @@ class GenerationDraft(BaseModel):
                 data[key] = value
         return GenerationDraft.model_validate(data)
 
+    def with_pairs(
+        self,
+        neighbour_pairs: list[tuple[int, int]] | None,
+        forbidden_pairs: list[tuple[int, int]] | None,
+    ) -> "GenerationDraft":
+        """
+        Return a new draft with the zone-id pairs the frontend sent in the request body.
+
+        Unlike merge_patch, an empty list is applied rather than skipped: it is how the
+        frontend resets a matrix. None still means "not sent" and keeps the current value.
+        """
+
+        update: dict[str, Any] = {}
+        if neighbour_pairs is not None:
+            update["neighbour_pairs"] = list(neighbour_pairs)
+        if forbidden_pairs is not None:
+            update["forbidden_pairs"] = list(forbidden_pairs)
+        return self.model_copy(update=update)
+
+    def pairs_snapshot(self) -> dict[str, list[list[int]]]:
+        """The draft's relation pairs as plain id lists, for handing back to the frontend."""
+
+        return {
+            "neighbour_pairs": [list(pair) for pair in self.neighbour_pairs or []],
+            "forbidden_pairs": [list(pair) for pair in self.forbidden_pairs or []],
+        }
+
     def as_named_dict(self) -> dict[str, Any]:
         """
         The draft with zone ids rendered back as names, for showing it in the system
