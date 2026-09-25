@@ -68,6 +68,23 @@ def _extract_territory_from_history(messages: list[dict[str, Any]]) -> Polygonal
     return None
 
 
+def _done_envelope(
+    chat_id: str | None, assistant_message_id: str | None, territory_outline: dict[str, Any] | None
+) -> dict[str, Any]:
+    """
+    Every turn hands the boundary back, not only the one that ran generation: the
+    frontend cannot read Shapefile/KML itself, and a turn that only asks a question
+    would otherwise leave the uploaded territory off the map.
+    """
+
+    return {
+        "type": "done",
+        "chat_id": chat_id,
+        "assistant_message_id": assistant_message_id,
+        "territory": territory_outline,
+    }
+
+
 async def stream_custom_chat_turn(
     *,
     llm_client: ChatClient,
@@ -118,9 +135,10 @@ async def stream_custom_chat_turn(
             "detail": "territory_file is required on the first message of a custom chat",
             "message": "Нужна граница территории — приложи файл с ней к сообщению.",
         }
-        yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
+        yield _done_envelope(chat_id, None, None)
         return
 
+    territory_outline = territory_result_geojson(resolved_territory.as_gdf(4326))
     is_new_territory_upload = territory is not None
 
     user_message_metadata = (
@@ -161,7 +179,7 @@ async def stream_custom_chat_turn(
             for envelope in envelopes:
                 yield envelope
         yield {"type": "error", "stage": "llm", "detail": str(exc), "message": LLM_ERROR_MESSAGE_RU}
-        yield {"type": "done", "chat_id": chat_id, "assistant_message_id": None}
+        yield _done_envelope(chat_id, None, territory_outline)
         return
 
     if persist:
@@ -209,7 +227,7 @@ async def stream_custom_chat_turn(
                 dto = GenPlannerCustomDTO(profile_id=draft.profile_id, territory=resolved_territory)
                 result = await genplanner_service.run_custom_func_generation(dto)
                 result_payload = localize_result_payload(result.model_dump(), trim_road_level_depth=True)
-                result_payload["territory"] = territory_result_geojson(resolved_territory.as_gdf(4326))
+                result_payload["territory"] = territory_outline
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {"msg": str(exc.detail)}
                 logger.warning(f"custom chat-triggered generation failed: {detail}")
@@ -279,4 +297,4 @@ async def stream_custom_chat_turn(
                 "message": "Ответ сформирован, но не сохранён в историю чата (сервис истории недоступен).",
             }
 
-    yield {"type": "done", "chat_id": chat_id, "assistant_message_id": assistant_message_id}
+    yield _done_envelope(chat_id, assistant_message_id, territory_outline)

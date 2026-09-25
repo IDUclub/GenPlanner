@@ -20,10 +20,12 @@ def territory_result_geojson(territory: gpd.GeoDataFrame) -> dict[str, Any]:
     Boundary the generation ran on, for the chat `result` event, so the frontend can draw it
     next to the zones in both chats (in the custom one it has no other source for it).
     Geometry only: the attribute panel would otherwise show whatever the uploaded file or
-    Urban API happened to carry.
+    Urban API happened to carry. Merged into one feature, so a file of adjacent parcels is
+    drawn as the outer outline rather than with the borders between the parcels.
     """
 
-    boundary = gpd.GeoDataFrame(geometry=territory.geometry.to_crs(4326).values, crs=4326)
+    outline = territory.geometry.to_crs(4326).make_valid().union_all()
+    boundary = gpd.GeoDataFrame(geometry=[outline], crs=4326)
     return json.loads(boundary.to_json())
 
 
