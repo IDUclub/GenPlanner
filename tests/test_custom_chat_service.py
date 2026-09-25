@@ -2,6 +2,7 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from shapely.geometry import box, shape
 
 from app.chat.chat_common import DECISION_TEMPERATURE, LLM_ERROR_MESSAGE_RU
 from app.chat.custom_chat_service import (
@@ -421,3 +422,80 @@ async def test_territory_too_small_for_the_profile_gets_a_dedicated_message():
     assert "Запускаю!" not in reply
     assert "слишком мала" in reply
     assert f"«{profile_name_by_id(genplanner_service.calls[0].profile_id)}»" in reply
+
+
+def _adjacent_parcels() -> PolygonalFeatureCollection:
+    """Two parcels sharing an edge, each carrying its own attributes, as uploaded files often do."""
+
+    def parcel(lon: float, name: str) -> dict[str, Any]:
+        ring = [[lon, 59.0], [lon + 0.1, 59.0], [lon + 0.1, 59.1], [lon, 59.1], [lon, 59.0]]
+        return {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]}, "properties": {"name": name}}
+
+    return PolygonalFeatureCollection.model_validate(
+        {"type": "FeatureCollection", "features": [parcel(30.0, "участок 1"), parcel(30.1, "участок 2")]}
+    )
+
+
+async def _custom_turn(llm, storage, territory, user_query="вот граница", chat_id=None) -> list[dict[str, Any]]:
+    return await _collect(
+        stream_custom_chat_turn(
+            llm_client=llm,
+            chat_storage_client=storage,
+            genplanner_service=FakeGenPlannerService(),
+            user_id="00000000-0000-0000-0000-000000000001" if storage else None,
+            territory=territory,
+            params=ChatCustomTurnDTO(user_query=user_query, chat_id=chat_id),
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_done_carries_the_boundary_on_a_turn_without_generation():
+    """A turn that only asks for the profile used to leave the uploaded territory off the map."""
+
+    events = await _custom_turn(FakeChatClient([{"action": "chat", "reply": "какой профиль?"}]), None, _TERRITORY_A)
+
+    assert not any(event["type"] == "result" for event in events)
+    territory = events[-1]["territory"]
+    assert len(territory["features"]) == 1
+    assert territory["features"][0]["geometry"] == _territory_to_geojson_dict(_TERRITORY_A)["features"][0]["geometry"]
+
+
+@pytest.mark.asyncio
+async def test_done_carries_the_boundary_from_history_when_no_file_is_attached():
+    storage = FakeChatStorageClient()
+    llm = FakeChatClient([{"action": "chat", "reply": "принято"}, {"action": "chat", "reply": "какой профиль?"}])
+
+    first = await _custom_turn(llm, storage, _TERRITORY_B)
+    second = await _custom_turn(llm, storage, None, user_query="дальше", chat_id=first[-1]["chat_id"])
+
+    assert second[-1]["territory"] == first[-1]["territory"]
+    assert second[-1]["territory"] is not None
+
+
+@pytest.mark.asyncio
+async def test_boundary_of_adjacent_parcels_is_one_outline_without_their_attributes():
+    events = await _custom_turn(FakeChatClient([{"action": "chat", "reply": "принято"}]), None, _adjacent_parcels())
+
+    features = events[-1]["territory"]["features"]
+    assert len(features) == 1
+    assert features[0]["properties"] == {}
+    outline = shape(features[0]["geometry"])
+    assert outline.geom_type == "Polygon"
+    assert outline.symmetric_difference(box(30.0, 59.0, 30.2, 59.1)).area < 1e-12
+
+
+@pytest.mark.asyncio
+async def test_done_carries_the_boundary_when_the_model_failed():
+    events = await _custom_turn(FailingChatClient(LLMChatError("boom")), None, _TERRITORY_A)
+
+    assert events[-1]["type"] == "done"
+    assert events[-1]["territory"] is not None
+
+
+@pytest.mark.asyncio
+async def test_done_has_no_boundary_when_none_was_ever_uploaded():
+    events = await _custom_turn(FakeChatClient([]), None, None, user_query="запускай")
+
+    assert events[-1]["type"] == "done"
+    assert events[-1]["territory"] is None
