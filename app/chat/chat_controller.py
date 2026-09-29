@@ -8,7 +8,13 @@ from sse_starlette.sse import EventSourceResponse
 from app.common.auth.bearer import verify_bearer_token
 from app.common.auth.user_identity import extract_user_id
 from app.common.exceptions.http_exception import http_exception
-from app.dependencies import get_chat_storage_client, get_config, get_genplanner_service, get_llm_chat_client
+from app.dependencies import (
+    get_chat_storage_client,
+    get_config,
+    get_genplanner_service,
+    get_llm_chat_client,
+    get_object_storage,
+)
 from app.gen_planner.gen_planner_service import GenPlannerService
 
 from .chat_service import stream_chat_turn
@@ -61,5 +67,6 @@ async def chat_stream(
         user_id=user_id,
         scenario_id=scenario_id,
         params=params,
+        object_storage=get_object_storage(request),
     )
     return EventSourceResponse(_as_sse_events(envelopes))
