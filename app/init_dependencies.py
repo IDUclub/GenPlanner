@@ -12,6 +12,7 @@ from app.common.chat_storage.chat_storage_client import build_chat_storage_clien
 from app.common.config_runtime import apply_overrides_on_startup
 from app.common.llm.factory import build_chat_client
 from app.common.logging.init_logger import init_logger
+from app.common.object_storage.object_storage import ObjectStorageError, build_object_storage
 from app.gen_planner.gen_planner_service import GenPlannerService
 from app.version import __version__ as version
 
@@ -69,6 +70,14 @@ async def rebuild_runtime_state(app: FastAPI) -> None:
         await old_keycloak_token_client.aclose()
 
     app.state.chat_storage_client = build_chat_storage_client(config, app.state.keycloak_token_client)
+
+    # A half-configured FILESERVER_* must not take the whole service down (this also runs
+    # on every runtime config override) -- chats just stop leaving layer links in history.
+    try:
+        app.state.object_storage = build_object_storage(config)
+    except ObjectStorageError as exc:
+        logger.error(f"Layer storage disabled: {exc}")
+        app.state.object_storage = None
 
     if app.state.llm_chat_client is None:
         logger.warning("LLM base url/CHAT_MODEL not configured -- chat feature disabled")
