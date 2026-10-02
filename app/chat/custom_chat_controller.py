@@ -9,7 +9,12 @@ from app.common.auth.user_identity import extract_user_id
 from app.common.exceptions.http_exception import http_exception
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
 from app.common.geometries_dto.territory_file import parse_territory_file
-from app.dependencies import get_chat_storage_client, get_genplanner_service, get_llm_chat_client
+from app.dependencies import (
+    get_chat_storage_client,
+    get_genplanner_service,
+    get_llm_chat_client,
+    get_object_storage,
+)
 from app.gen_planner.gen_planner_service import GenPlannerService
 
 from .custom_chat_service import stream_custom_chat_turn
@@ -65,5 +70,6 @@ async def custom_chat_stream(
         user_id=user_id,
         territory=territory,
         params=ChatCustomTurnDTO(user_query=user_query, chat_id=chat_id),
+        object_storage=get_object_storage(request),
     )
     return EventSourceResponse(_as_sse_events(envelopes))

@@ -6,6 +6,7 @@ from iduconfig import Config
 
 from app.common.chat_storage.chat_storage_client import ChatStorageClient
 from app.common.llm.chat_client import ChatClient
+from app.common.object_storage.object_storage import ObjectStorage
 from app.gen_planner.gen_planner_service import GenPlannerService
 
 
@@ -30,6 +31,10 @@ def get_llm_chat_client(request: Request) -> ChatClient | None:
 
 def get_chat_storage_client(request: Request) -> ChatStorageClient | None:
     return request.app.state.chat_storage_client
+
+
+def get_object_storage(request: Request) -> ObjectStorage | None:
+    return request.app.state.object_storage
 
 
 def get_keycloak_token_client(request: Request) -> KeycloakTokenClient | None:

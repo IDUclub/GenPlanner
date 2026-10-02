@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatStorageError
 from app.common.exceptions.http_exception import http_exception
 from app.common.llm.chat_client import ChatClient, LLMChatError
+from app.common.object_storage.object_storage import ObjectStorage
 from app.gen_planner.dto.gen_planner_func_dto import GenPlannerFuncZonesDTO
 from app.gen_planner.gen_planner_service import GenPlannerService
 
@@ -24,6 +25,7 @@ from .chat_common import (
 )
 from .chat_title import build_chat_title, resolve_chat_title
 from .dto.chat_dto import ChatTurnDTO
+from .geo_layers import assistant_message_parts, store_result_layers
 from .result_localization import localize_result_payload
 
 
@@ -85,10 +87,11 @@ async def stream_chat_turn(
     user_id: str | None,
     scenario_id: int,
     params: ChatTurnDTO,
+    object_storage: ObjectStorage | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """
     Run one turn of the GenPlanner chat agent, yielding gMART-style envelopes:
-    `chat_created`, `token`, `result`, `warning`, `error`, `done`. Transport-agnostic --
+    `chat_created`, `token`, `result`, `file`, `warning`, `error`, `done`. Transport-agnostic --
     the controller wraps each envelope into an SSE event.
 
     One `complete_json` call per turn decides the action (see agent/schema.py) and
@@ -258,15 +261,25 @@ async def stream_chat_turn(
             "territory": result_payload["territory"],
         }
 
+    # Stored after the live `result` event so the map shows up without waiting on storage;
+    # only the history links depend on it.
+    file_layers: list[dict[str, Any]] = []
+    if result_payload is not None:
+        async for event in store_result_layers(object_storage, result_payload, file_layers):
+            yield event
+
     assistant_message_id = None
     if persist and chat_id:
+        body: dict[str, Any] = (
+            {"parts": assistant_message_parts(reply, file_layers)} if file_layers else {"content": reply}
+        )
         try:
             stored = await chat_storage_client.add_message(
                 user_id,
                 chat_id,
                 role="assistant",
-                content=reply,
                 metadata={"draft": draft.model_dump(exclude_none=True), "action": action},
+                **body,
             )
             assistant_message_id = stored.get("message_id")
         except ChatStorageError as exc:

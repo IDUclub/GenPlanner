@@ -27,6 +27,7 @@ idu-config = ">=1.0.3,<2.0.0"
 genplanner = "^1.0.5"
 fastmcp = "^3.3"
 sse-starlette = "^2.3"
+minio = "^7.2"
 python-jose = {version = "^3.3", extras = ["cryptography"]}
 idu-service-auth = {git = "https://github.com/IDUclub/idu-service-auth.git"}
 

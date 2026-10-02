@@ -9,6 +9,7 @@ from app.common.chat_storage.chat_storage_client import ChatStorageClient, ChatS
 from app.common.constants.api_constants import profile_name_by_id
 from app.common.geometries_dto.geometries import PolygonalFeatureCollection
 from app.common.llm.chat_client import ChatClient, LLMChatError
+from app.common.object_storage.object_storage import ObjectStorage
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG, GenPlannerService
 
@@ -25,6 +26,7 @@ from .chat_common import (
 )
 from .chat_title import CUSTOM_FALLBACK_TITLE_RU, build_chat_title, resolve_chat_title
 from .dto.chat_custom_dto import ChatCustomTurnDTO
+from .geo_layers import assistant_message_parts, store_result_layers
 from .result_localization import localize_result_payload
 
 
@@ -93,11 +95,12 @@ async def stream_custom_chat_turn(
     user_id: str | None,
     territory: PolygonalFeatureCollection | None,
     params: ChatCustomTurnDTO,
+    object_storage: ObjectStorage | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """
     Run one turn of the GenPlanner custom-territory chat agent (no scenario_id/project_id
     -- the territory is an uploaded file boundary), yielding gMART-style envelopes:
-    `chat_created`, `token`, `result`, `warning`, `error`, `done`.
+    `chat_created`, `token`, `result`, `file`, `warning`, `error`, `done`.
 
     Unlike stream_chat_turn, there's no Urban API scenario to resolve project_id, roads,
     water or slope exclusion from -- generation runs on the uploaded territory geometry
@@ -277,15 +280,25 @@ async def stream_custom_chat_turn(
             "territory": result_payload["territory"],
         }
 
+    # Stored after the live `result` event so the map shows up without waiting on storage;
+    # only the history links depend on it.
+    file_layers: list[dict[str, Any]] = []
+    if result_payload is not None:
+        async for event in store_result_layers(object_storage, result_payload, file_layers):
+            yield event
+
     assistant_message_id = None
     if persist and chat_id:
+        body: dict[str, Any] = (
+            {"parts": assistant_message_parts(reply, file_layers)} if file_layers else {"content": reply}
+        )
         try:
             stored = await chat_storage_client.add_message(
                 user_id,
                 chat_id,
                 role="assistant",
-                content=reply,
                 metadata={"draft": draft.model_dump(exclude_none=True), "action": action},
+                **body,
             )
             assistant_message_id = stored.get("message_id")
         except ChatStorageError as exc:
