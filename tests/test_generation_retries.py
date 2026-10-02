@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG, GenPlannerService
+from app.gen_planner.gen_planner_service import GENERATION_TIMEOUT_MSG, TERRITORY_TOO_SMALL_MSG, GenPlannerService
 
 
 class RaisingGenPlanner:
@@ -38,3 +38,18 @@ async def test_other_failures_are_still_retried():
         )
 
     assert genplanner.calls == 3
+
+
+@pytest.mark.asyncio
+async def test_generation_timeout_is_not_retried_and_reported():
+    genplanner = RaisingGenPlanner(TimeoutError("GenPlanner generation time limit exceeded after 3 tasks"))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await GenPlannerService._run_features_generation_with_retries(
+            genplanner=genplanner, funczone="recreation", attempts=3, delay_seconds=0
+        )
+
+    assert genplanner.calls == 1
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["msg"] == GENERATION_TIMEOUT_MSG
+    assert exc_info.value.detail["detail"]["reason"] == "generation_timeout"

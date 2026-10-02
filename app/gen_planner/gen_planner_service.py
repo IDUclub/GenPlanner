@@ -31,6 +31,11 @@ TERRITORY_TOO_SMALL_MSG = (
     "Увеличьте границу территории или выберите другой профиль."
 )
 
+GENERATION_TIMEOUT_MSG = (
+    "Генерация не уложилась в отведённое время: территория слишком большая или сложная для разбиения. "
+    "Уменьшите границу территории или добавьте дороги."
+)
+
 
 def _is_no_roads_generated_error(exc: Exception) -> bool:
     """
@@ -716,6 +721,14 @@ class GenPlannerService:
                         TERRITORY_TOO_SMALL_MSG,
                         _input={"funczone": str(funczone)},
                         _detail={"reason": "no_roads_generated", "error": str(exc)},
+                    ) from exc
+                if isinstance(exc, TimeoutError):
+                    logger.warning(f"GenPlanner generation exceeded its time budget for {funczone}: {exc}")
+                    raise http_exception(
+                        422,
+                        GENERATION_TIMEOUT_MSG,
+                        _input={"funczone": str(funczone)},
+                        _detail={"reason": "generation_timeout", "error": str(exc)},
                     ) from exc
                 last_exception = exc
                 logger.exception(
