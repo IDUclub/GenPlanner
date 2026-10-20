@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 from app.common.exceptions.http_exception import http_exception
 from app.common.object_storage.object_storage import ObjectStorage, ObjectStorageError
 from app.dependencies import get_object_storage
+from app.service_reports import stored_report_response
 
 from .geo_layers import FILE_SLOTS, MIME_TYPE, is_valid_result_id, object_key
 
@@ -58,3 +59,13 @@ def generation_file(
         media_type=MIME_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{slot}.geojson"'},
     )
+
+
+@files_router.get("/reports/{result_id}", summary="Открыть или скачать текстовый отчёт", response_model=None)
+def service_report(
+    result_id: str,
+    download: bool = False,
+    storage=Depends(get_object_storage),
+):
+
+    return stored_report_response(storage, result_id, download)

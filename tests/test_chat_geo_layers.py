@@ -204,12 +204,12 @@ async def test_scenario_chat_persists_layers_as_file_parts(tmp_path):
         )
     )
 
-    assert [event["name"] for event in events if event["type"] == "file"] == list(FILE_SLOTS)
+    assert [event["name"] for event in events if event["type"] == "file"] == [*FILE_SLOTS, "report"]
     assistant = storage.messages[-1]
     assert assistant["role"] == "assistant"
     assert assistant["content"] is None
-    assert [part["kind"] for part in assistant["parts"]] == ["text", "file", "file", "file"]
-    assert [part["payload"]["name"] for part in assistant["parts"][1:]] == list(FILE_SLOTS)
+    assert [part["kind"] for part in assistant["parts"]] == ["text", "file", "file", "file", "file"]
+    assert [part["payload"]["name"] for part in assistant["parts"][1:]] == [*FILE_SLOTS, "report"]
 
 
 async def test_custom_chat_persists_layers_as_file_parts(tmp_path):
@@ -229,7 +229,7 @@ async def test_custom_chat_persists_layers_as_file_parts(tmp_path):
     )
 
     file_events = [event for event in events if event["type"] == "file"]
-    assert [event["name"] for event in file_events] == list(FILE_SLOTS)
+    assert [event["name"] for event in file_events] == [*FILE_SLOTS, "report"]
     result_index = next(i for i, event in enumerate(events) if event["type"] == "result")
     assert events.index(file_events[0]) > result_index
     assistant = storage.messages[-1]
