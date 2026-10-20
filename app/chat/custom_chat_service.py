@@ -302,7 +302,7 @@ async def stream_custom_chat_turn(
             reply,
             {
                 "summary": counts if result_payload is not None else {},
-                "parameters": draft.model_dump(exclude_none=True),
+                "parameters": draft.as_named_dict(),
             },
         ):
             if event["type"] == "file":
