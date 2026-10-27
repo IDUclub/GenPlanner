@@ -12,6 +12,7 @@ from app.common.llm.chat_client import ChatClient, LLMChatError
 from app.common.object_storage.object_storage import ObjectStorage
 from app.gen_planner.dto.gen_planner_custom_dto import GenPlannerCustomDTO
 from app.gen_planner.gen_planner_service import TERRITORY_TOO_SMALL_MSG, GenPlannerService
+from app.service_reports import store_report
 
 from .agent.custom_draft import CustomGenerationDraft
 from .agent.custom_prompts import build_custom_system_prompt
@@ -285,6 +286,27 @@ async def stream_custom_chat_turn(
     file_layers: list[dict[str, Any]] = []
     if result_payload is not None:
         async for event in store_result_layers(object_storage, result_payload, file_layers):
+            yield event
+
+    if action == "run_generation":
+        payload = result_payload or {}
+        counts = {
+            "Количество зон": len((payload.get("zones") or {}).get("features") or []),
+            "Количество дорог": len((payload.get("roads") or {}).get("features") or []),
+        }
+        async for event in store_report(
+            object_storage,
+            "genplanner",
+            "/genplanner",
+            "Отчёт о генерации планировки",
+            reply,
+            {
+                "summary": counts if result_payload is not None else {},
+                "parameters": draft.as_named_dict(),
+            },
+        ):
+            if event["type"] == "file":
+                file_layers.append(event)
             yield event
 
     assistant_message_id = None

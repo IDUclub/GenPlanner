@@ -21,6 +21,7 @@ from typing import Any, AsyncIterator
 from loguru import logger
 
 from app.common.object_storage.object_storage import ObjectStorage, ObjectStorageError
+from app.service_reports import file_part
 
 SOURCE_SERVICE = "genplanner"
 MIME_TYPE = "application/geo+json"
@@ -78,6 +79,9 @@ def build_stored_layer(*, slot: str, result_id: str) -> dict[str, Any]:
 def geo_layer_to_file_part(layer: dict[str, Any]) -> dict[str, Any]:
     """ChatStorage `file` part payload from a layer descriptor (only the durable `url`)."""
 
+    if layer.get("role") == "report":
+
+        return file_part(layer)
     return {
         "url": layer["url"],
         "name": layer["name"],
