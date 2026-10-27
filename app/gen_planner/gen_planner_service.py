@@ -36,6 +36,11 @@ GENERATION_TIMEOUT_MSG = (
     "Уменьшите границу территории или добавьте дороги."
 )
 
+NON_FINITE_GENERATION_MSG = (
+    "Не удалось выполнить генерацию: в расчётах получились неопределённые или бесконечные значения. "
+    "Проверьте геометрию территории и зон, исключите зоны с нулевой площадью или измените параметры генерации."
+)
+
 
 def _is_no_roads_generated_error(exc: Exception) -> bool:
     """
@@ -713,6 +718,15 @@ class GenPlannerService:
                     f"GenPlanner generation attempt {attempt}/{attempts} succeeded"
                 )
                 return zones, roads
+            except pd.errors.IntCastingNaNError as exc:
+                # Repeating a calculation with NaN/inf inputs cannot repair it.
+                logger.exception(f"GenPlanner generation produced non-finite values: {exc}")
+                raise http_exception(
+                    422,
+                    NON_FINITE_GENERATION_MSG,
+                    _input={"funczone": str(funczone)},
+                    _detail={"reason": "non_finite_generation_values", "error": str(exc)},
+                ) from exc
             except Exception as exc:
                 if _is_no_roads_generated_error(exc):
                     logger.warning(f"GenPlanner generated no roads, territory too small for {funczone}: {exc}")
