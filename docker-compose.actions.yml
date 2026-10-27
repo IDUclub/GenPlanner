@@ -7,7 +7,7 @@ services:
     env_file:
       - .env.development
     volumes:
-      - ./runtime_data:/app/runtime_data
+      - /var/essdata/genplanner:/app/runtime_data
     restart: always
 
   mcp:
