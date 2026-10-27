@@ -22,6 +22,11 @@ jobs:
       - name: Set current date as env variable
         id: date
         run: echo "NOW=$(date +'%Y-%m-%dT%H-%M-%S')" >> $GITHUB_OUTPUT
+      - name: clean_runtime_data
+        run: |
+          if [ -d runtime_data ]; then
+            docker run --rm -v "$PWD":/workspace alpine sh -c 'rm -rf /workspace/runtime_data'
+          fi
       - name: checkout
         uses: actions/checkout@v4
       - name: copy_env
