@@ -56,9 +56,10 @@ class VllmChatClient:
         default_model (str): Model used when a call doesn't override it.
     """
 
-    def __init__(self, base_url: str, default_model: str) -> None:
+    def __init__(self, base_url: str, default_model: str, *, chat_priority: int = -100) -> None:
         self.base_url = _normalize_base_url(base_url)
         self.default_model = default_model
+        self._chat_priority = chat_priority
 
     @property
     def _chat_completions_url(self) -> str:
@@ -101,6 +102,7 @@ class VllmChatClient:
             "model": model or self.default_model,
             "messages": messages,
             "stream": True,
+            "priority": self._chat_priority,
             "chat_template_kwargs": {"enable_thinking": False},
         }
         if temperature is not None:
@@ -212,6 +214,9 @@ class VllmChatClient:
             "model": model or self.default_model,
             "messages": messages,
             "stream": False,
+            # GenPlanner combines parameter parsing, action selection and the
+            # user-facing reply in one call, so the whole call is live/blocking.
+            "priority": self._chat_priority,
             # Qwen3's chat template must close the thinking block before the
             # schema-constrained answer; these application calls need only the answer.
             "chat_template_kwargs": {"enable_thinking": False},
@@ -280,4 +285,8 @@ def build_vllm_chat_client(config: Config) -> "VllmChatClient | None":
     if not default_model:
         return None
 
-    return VllmChatClient(base_url, default_model)
+    return VllmChatClient(
+        base_url,
+        default_model,
+        chat_priority=int(get_optional_config(config, "VLLM_CHAT_PRIORITY", "-100")),
+    )

@@ -70,6 +70,7 @@ async def test_complete_json_constrains_output_with_response_format(client, patc
     assert payload["model"] == "qwen3.8-27b"
     assert payload["messages"] == [{"role": "user", "content": "hi"}]
     assert payload["stream"] is False
+    assert payload["priority"] == -100
     assert payload["temperature"] == 0.2
     assert payload["chat_template_kwargs"] == {"enable_thinking": False}
     assert "reasoning_effort" not in payload
@@ -121,6 +122,7 @@ async def test_complete_json_retries_when_the_model_answers_only_in_the_reasonin
 
     assert await client.complete_json([{"role": "user", "content": "hi"}], schema=SCHEMA) == {"action": "chat"}
     assert len(session.post_calls) == 2
+    assert [call["json"]["priority"] for call in session.post_calls] == [-100, -100]
 
 
 @pytest.mark.parametrize("field", ["reasoning", "reasoning_content"])
@@ -211,6 +213,7 @@ async def test_stream_chat_yields_content_deltas_only(client, patch_client_sessi
 
     assert [piece async for piece in client.stream_chat([{"role": "user", "content": "hi"}])] == ["При", "вет"]
     assert session.post_calls[0]["json"]["stream"] is True
+    assert session.post_calls[0]["json"]["priority"] == -100
     assert session.post_calls[0]["json"]["chat_template_kwargs"] == {"enable_thinking": False}
 
 
