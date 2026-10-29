@@ -3,6 +3,8 @@ from typing import Any, AsyncIterator
 
 import aiohttp
 from iduconfig import Config
+from jsonschema import ValidationError as JsonSchemaValidationError
+from jsonschema import validate as validate_json_schema
 from loguru import logger
 
 from app.common.config_utils import get_optional_config
@@ -22,10 +24,9 @@ class VllmEmptyContentError(VllmChatError):
     """
     Raised when a response carries no assistant content.
 
-    Harmony-format reasoning models (gpt-oss) occasionally end their turn in the
-    reasoning channel without ever opening the final one: `finish_reason` is "stop",
-    `message.reasoning` holds the plan and `message.content` is empty. Measured at
-    ~2% of decision calls on gpt-oss-20b, so it is retried rather than surfaced.
+    Reasoning backends can misroute the final answer into the reasoning channel.
+    A complete JSON answer there can be recovered after schema validation;
+    otherwise the call is retried.
     """
 
 
@@ -100,6 +101,7 @@ class VllmChatClient:
             "model": model or self.default_model,
             "messages": messages,
             "stream": True,
+            "chat_template_kwargs": {"enable_thinking": False},
         }
         if temperature is not None:
             payload["temperature"] = temperature
@@ -156,8 +158,9 @@ class VllmChatClient:
         decoding -- used for the chat agent's one-call-per-turn decision step instead of
         hand-rolled tool-calling, which is unreliable across small local models.
 
-        A response with no assistant content is retried, up to `_EMPTY_CONTENT_ATTEMPTS`
-        calls in total -- see VllmEmptyContentError.
+        If content is empty, a complete JSON object in the reasoning channel is
+        accepted only on a normally finished turn and after schema validation.
+        Otherwise the request is retried, up to `_EMPTY_CONTENT_ATTEMPTS` calls.
 
         Args:
             messages: Chat messages, system prompt included.
@@ -209,6 +212,9 @@ class VllmChatClient:
             "model": model or self.default_model,
             "messages": messages,
             "stream": False,
+            # Qwen3's chat template must close the thinking block before the
+            # schema-constrained answer; these application calls need only the answer.
+            "chat_template_kwargs": {"enable_thinking": False},
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {"name": _JSON_SCHEMA_NAME, "schema": schema},
@@ -234,11 +240,26 @@ class VllmChatClient:
         choice = choices[0] if choices else {}
         message = choice.get("message") or {}
         content = message.get("content")
-        if not content:
-            reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
+        if not content or not content.strip():
+            # Some vLLM responses put the final structured answer in the
+            # reasoning channel. Never extract a JSON fragment out of prose or
+            # accept an unfinished turn: that might be an intermediate plan.
+            if choice.get("finish_reason") == "stop":
+                for field in ("reasoning", "reasoning_content"):
+                    reasoning = message.get(field)
+                    if not isinstance(reasoning, str) or not reasoning.strip():
+                        continue
+                    try:
+                        parsed = json.loads(reasoning)
+                        if not isinstance(parsed, dict):
+                            continue
+                        validate_json_schema(parsed, schema)
+                    except (ValueError, JsonSchemaValidationError):
+                        continue
+                    logger.warning("Recovered vLLM structured answer from {} after schema validation", field)
+                    return parsed
             raise VllmEmptyContentError(
-                f"vLLM returned no message content: finish_reason={choice.get('finish_reason')!r}, "
-                f"reasoning={reasoning[:300]!r}"
+                f"vLLM returned no message content: finish_reason={choice.get('finish_reason')!r}"
             )
 
         return loads_json_object(content)
