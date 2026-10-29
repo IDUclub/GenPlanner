@@ -4,6 +4,19 @@
 
 GenPlanner REST API interface. Interactive documentation is available on /docs.
 
+## vLLM chat models
+
+Set `VLLM_BASE_URL` to the serving URL and `CHAT_MODEL` to the exact model ID
+returned by `/v1/models` (for example, `qwen3.8-27b`). `GENERATE_MODEL` is used
+as a fallback when `CHAT_MODEL` is absent.
+
+Chat requests send `chat_template_kwargs: {"enable_thinking": false}` so Qwen
+returns the final answer directly, including for schema-constrained decisions.
+For Qwen3.8-27B, the vLLM server must use the matching `--reasoning-parser qwen3`;
+recheck this flag when migrating from GPT-OSS. See the
+[vLLM Qwen3.8-27B recipe](https://recipes.vllm.ai/Qwen/Qwen3.8-27B).
+The server deployment is managed separately from this service.
+
 ## Development
 
 ```
@@ -17,6 +30,7 @@ poetry run pylint --rcfile=tests/.pylintrc tests
 `tests/.pylintrc` relaxes pytest-fixture-related rules (e.g. `redefined-outer-name`) that
 don't apply to test code; it isn't auto-discovered, so `pylint tests` must be run with
 `--rcfile=tests/.pylintrc` explicitly or it silently falls back to the root config.
+
 ## Текстовые отчёты сервиса
 
 После выполнения операции чат дополнительно возвращает событие `file` с
