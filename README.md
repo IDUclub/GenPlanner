@@ -17,6 +17,22 @@ recheck this flag when migrating from GPT-OSS. See the
 [vLLM Qwen3.8-27B recipe](https://recipes.vllm.ai/Qwen/Qwen3.8-27B).
 The server deployment is managed separately from this service.
 
+### Request priority
+
+Following the shared PzzCompareAPI matrix, chat calls send `priority=-100`
+(live / blocking). Set `VLLM_CHAT_PRIORITY` to override it, or `0` to disable
+priority scheduling for this service. The field is a signed 64-bit integer.
+
+GenPlanner's structured decision combines parameter parsing, action selection,
+the reply and, for a new chat, its title in one LLM call. That entire request
+uses the response priority `-100`; there is no separate parsing or title call
+to schedule at `-60`.
+
+The vLLM server must run with `--scheduling-policy priority` before non-zero
+values are used. Lower numbers are handled first; with the default `fcfs`
+policy, non-zero priorities are rejected. See the
+[vLLM scheduler documentation](https://docs.vllm.ai/en/latest/cli/serve/#scheduling-policy).
+
 ## Development
 
 ```

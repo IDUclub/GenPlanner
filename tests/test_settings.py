@@ -50,6 +50,7 @@ def test_build_settings_reads_required_and_default_fields():
     assert settings.max_api_async_extractions == 20
     assert settings.llm_provider == "vllm"  # default, not present in REQUIRED_ENV
     assert settings.keycloak_client_secret == ""
+    assert settings.vllm_chat_priority == -100
 
 
 def test_build_settings_raises_when_a_required_key_is_missing():
@@ -64,6 +65,23 @@ def test_build_settings_type_checks_optional_numeric_fields():
 
     with pytest.raises(ValueError, match="not-a-number"):
         build_settings(FakeConfig(env))
+
+
+@pytest.mark.parametrize("priority", [-100, -80, 0])
+def test_build_settings_reads_vllm_chat_priority(priority):
+    settings = build_settings(FakeConfig({**REQUIRED_ENV, "VLLM_CHAT_PRIORITY": str(priority)}))
+
+    assert settings.vllm_chat_priority == priority
+
+
+@pytest.mark.parametrize("value", ["not-an-integer", str(2**63), str(-(2**63) - 1)])
+def test_validate_candidate_rejects_invalid_vllm_priority(monkeypatch, value):
+    for key, required_value in REQUIRED_ENV.items():
+        monkeypatch.setenv(key, required_value)
+    monkeypatch.setenv("VLLM_CHAT_PRIORITY", "-100")
+
+    assert validate_candidate(EnvConfig(), "VLLM_CHAT_PRIORITY", value) is not None
+    assert os.environ["VLLM_CHAT_PRIORITY"] == "-100"
 
 
 def test_validate_candidate_accepts_a_valid_value(monkeypatch):

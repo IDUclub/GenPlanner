@@ -3,7 +3,7 @@ import pytest
 from app.common.llm.factory import build_chat_client
 from app.common.llm.ollama_chat_client import OllamaChatClient
 from app.common.llm.vllm_chat_client import VllmChatClient
-from tests.llm.conftest import FakeConfig
+from tests.llm.conftest import FakeConfig, FakeResponse
 
 VLLM_ENV = {"VLLM_BASE_URL": "http://vllm-test:8001", "CHAT_MODEL": "gpt-oss-20b"}
 OLLAMA_ENV = {"OLLAMA_BASE_URL": "http://ollama-test:11434", "CHAT_MODEL": "gpt-oss:20b"}
@@ -51,3 +51,16 @@ def test_returns_none_when_provider_is_not_fully_configured(values):
 def test_unknown_provider_raises():
     with pytest.raises(ValueError, match="Unsupported LLM_PROVIDER"):
         build_chat_client(FakeConfig({**VLLM_ENV, "LLM_PROVIDER": "openai"}))
+
+
+@pytest.mark.parametrize("priority", [-100, -80, 0])
+async def test_factory_sends_configured_priority_for_decisions_and_streams(priority, patch_client_session):
+    session = patch_client_session(
+        FakeResponse(200, json_body={"choices": [{"message": {"content": "{}"}}]}, stream_lines=[b"data: [DONE]\n"])
+    )
+    client = build_chat_client(FakeConfig({**VLLM_ENV, "VLLM_CHAT_PRIORITY": str(priority)}))
+
+    await client.complete_json([], schema={"type": "object"})
+    assert [piece async for piece in client.stream_chat([])] == []
+
+    assert [call["json"]["priority"] for call in session.post_calls] == [priority, priority]

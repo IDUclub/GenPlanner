@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 
 from iduconfig import Config
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from app.common.config_utils import get_optional_config
 
@@ -39,6 +39,7 @@ class Settings(BaseModel):
     keycloak_scope: str = ""
     llm_provider: str = "vllm"
     vllm_base_url: str = ""
+    vllm_chat_priority: int = Field(default=-100, ge=-(2**63), le=2**63 - 1)
     chat_model: str = ""
     generate_model: str = ""
     app_env: str = "development"
@@ -69,6 +70,7 @@ def build_settings(config: Config) -> Settings:
         keycloak_scope=get_optional_config(config, "KEYCLOAK_SCOPE", ""),
         llm_provider=get_optional_config(config, "LLM_PROVIDER", "vllm"),
         vllm_base_url=get_optional_config(config, "VLLM_BASE_URL", ""),
+        vllm_chat_priority=int(get_optional_config(config, "VLLM_CHAT_PRIORITY", "-100")),
         chat_model=get_optional_config(config, "CHAT_MODEL", ""),
         generate_model=get_optional_config(config, "GENERATE_MODEL", ""),
         app_env=get_optional_config(config, "APP_ENV", "development"),
