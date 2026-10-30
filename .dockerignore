@@ -3,3 +3,7 @@ README.md
 .gitignore
 **.ipynb
 **.log
+
+# Deployment credentials are injected by Compose, never copied into the image.
+.env
+.env.*

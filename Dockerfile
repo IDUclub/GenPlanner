@@ -32,6 +32,9 @@ RUN poetry install --only main --no-ansi
 
 COPY . /app
 
+# iduconfig requires an APP_ENV file; real settings come from the container env.
+RUN printf 'APP_ENV=development\n' > /app/.env.development
+
 EXPOSE 80
 
 CMD ["gunicorn", "--bind", "0.0.0.0:80", "--timeout", "1000", "-k", "uvicorn.workers.UvicornWorker", "app.main:app"]
