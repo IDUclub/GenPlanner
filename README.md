@@ -78,3 +78,9 @@ don't apply to test code; it isn't auto-discovered, so `pylint tests` must be ru
 сохраняются. Изменения касаются представления отчёта, схема JSON и SSE не меняется.
 
 Для скачивания используется русское имя `Отчёт.txt` через параметр заголовка `filename*`; `filename` содержит совместимое резервное имя.
+
+
+## SSE reconnection
+
+Chat SSE endpoints support replay and reconnection by `request_id` without restarting
+the operation. See [client contract and storage limits](SSE_RECONNECTION.md).
